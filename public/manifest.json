@@ -1,0 +1,10 @@
+{
+  "name": "KoraGPT",
+  "short_name": "KoraGPT",
+  "description": "Powerful AI Chat Assistant powered by Hugging Face",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a233b",
+  "theme_color": "#0a233b",
+  "icons": []
+}
