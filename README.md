@@ -6,6 +6,10 @@
     <b>The Next-Generation, Open-Source Browser-Based AI Code Editor</b>
   </p>
 
+  <p>
+    🌐 <b>Live Preview:</b> <a href="https://koragpt.vercel.app/" target="_blank">https://koragpt.vercel.app/</a>
+  </p>
+
   <!-- Badges -->
   <p>
     <a href="https://github.com/alornishan014/KoraGPT_IDE/blob/master/LICENSE">
