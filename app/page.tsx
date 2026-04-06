@@ -506,13 +506,12 @@ export default function ChatApp() {
         content = data.candidates[0].content.parts[0].text;
       } else if (provider === "ollama") {
         const apiUrl = baseUrl ? `${baseUrl.replace(/\/$/, '')}/api/chat` : "http://localhost:11434/api/chat";
-        const response = await fetch("/api/proxy", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            targetUrl: apiUrl,
+        
+        try {
+          const response = await fetch(apiUrl, {
             method: "POST",
-            body: {
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
               model: modelId,
               messages: chatMessages,
               stream: false,
@@ -520,12 +519,16 @@ export default function ChatApp() {
                 temperature: temperature,
                 num_predict: maxTokensState
               }
-            }
-          })
-        });
-        const data = await response.json();
-        if (data.error) throw new Error(data.error || "Ollama API Error");
-        content = data.message?.content || "";
+            })
+          });
+          const data = await response.json();
+          if (data.error) throw new Error(data.error || "Ollama API Error");
+          content = data.message?.content || "";
+        } catch (error) {
+          console.error("Local Ollama Error:", error);
+          alert("Ollama-তে কানেক্ট করা যাচ্ছে না। দয়া করে আপনার পিসিতে OLLAMA_ORIGINS='https://koragpt.vercel.app' সেট করে Ollama রিস্টার্ট করুন।");
+          throw error;
+        }
       }
 
       if (!content) throw new Error("No response received from the model.");

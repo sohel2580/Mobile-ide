@@ -81,10 +81,9 @@ export const Sidebar = ({
     setIsLoadingModels(true);
     try {
       const url = baseUrl ? `${baseUrl.replace(/\/$/, '')}/api/tags` : "http://localhost:11434/api/tags";
-      const response = await fetch("/api/proxy", {
-        method: "POST",
+      const response = await fetch(url, {
+        method: "GET",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ targetUrl: url, method: "GET" })
       });
       if (response.ok) {
         const data = await response.json();
@@ -97,6 +96,7 @@ export const Sidebar = ({
       }
     } catch (error) {
       console.error("Failed to fetch Ollama models:", error);
+      alert("Ollama-তে কানেক্ট করা যাচ্ছে না। দয়া করে আপনার পিসিতে OLLAMA_ORIGINS='https://koragpt.vercel.app' সেট করে Ollama রিস্টার্ট করুন।");
     } finally {
       setIsLoadingModels(false);
     }
