@@ -37,6 +37,8 @@ export default function ChatApp() {
   const [temperature, setTemperature] = useState<number>(0.7);
   const [maxTokensState, setMaxTokensState] = useState<number>(4000);
 
+  const [mobileView, setMobileView] = useState<"chat" | "editor">("chat");
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -49,6 +51,10 @@ export default function ChatApp() {
     setActiveFileId(id);
     if (!openFileIds.includes(id)) {
       setOpenFileIds(prev => [...prev, id]);
+    }
+    if (window.innerWidth < 768) {
+      setMobileView("editor");
+      setIsSidebarOpen(false);
     }
   };
 
@@ -605,10 +611,10 @@ export default function ChatApp() {
   };
 
   return (
-    <div className="flex h-screen font-sans overflow-hidden bg-[#0d1117] text-white transition-colors duration-300 dark">
-        <Sidebar 
-          isSidebarOpen={isSidebarOpen}
-          setIsSidebarOpen={setIsSidebarOpen}
+    <div className="flex flex-col md:flex-row h-screen font-sans overflow-hidden bg-[#0d1117] text-white transition-colors duration-300 dark">
+      <Sidebar 
+        isSidebarOpen={isSidebarOpen}
+        setIsSidebarOpen={setIsSidebarOpen}
           createNewChat={createNewChat}
           projectItems={projectItems}
           toggleFolder={toggleFolder}
@@ -637,37 +643,50 @@ export default function ChatApp() {
         handleFileUpload={handleFileUpload}
       />
 
-      <EditorSection 
-        activeFile={activeFile}
-        openFiles={projectItems.filter(f => openFileIds.includes(f.id))}
-        setActiveFileId={setActiveFileHandler}
-        closeFile={closeFileHandler}
-        getMonacoLanguage={getMonacoLanguage}
-        handleEditorChange={handleEditorChange}
-        pendingEdits={currentSession?.pendingEdits || []}
-        handleAcceptEdit={handleAcceptEdit}
-        handleRejectEdit={handleRejectEdit}
-      />
+      <div className={`flex-1 overflow-hidden relative ${mobileView === "editor" ? "flex" : "hidden"} md:flex`}>
+        <EditorSection 
+          activeFile={activeFile}
+          openFiles={projectItems.filter(f => openFileIds.includes(f.id))}
+          setActiveFileId={setActiveFileHandler}
+          closeFile={closeFileHandler}
+          getMonacoLanguage={getMonacoLanguage}
+          handleEditorChange={handleEditorChange}
+          pendingEdits={currentSession?.pendingEdits || []}
+          handleAcceptEdit={handleAcceptEdit}
+          handleRejectEdit={handleRejectEdit}
+        />
+        
+        {/* Floating action button to go back to chat on mobile */}
+        <button 
+          onClick={() => setMobileView("chat")}
+          className="md:hidden absolute bottom-6 right-6 bg-yellow-500 text-[#0a233b] p-3 rounded-full shadow-lg z-20"
+        >
+          <span className="text-xl">💬</span>
+        </button>
+      </div>
 
-      <ChatSection 
-        messages={messages}
-        currentSession={currentSession}
-        handleAcceptEdit={handleAcceptEdit}
-        handleRejectEdit={handleRejectEdit}
-        isLoading={isLoading}
-        messagesEndRef={messagesEndRef}
-        referencedFileIds={referencedFileIds}
-        projectItems={projectItems}
-        setReferencedFileIds={setReferencedFileIds}
-        sendMessage={sendMessage}
-        chatMode={chatMode}
-        setChatMode={setChatMode}
-        toggleListening={toggleListening}
-        isListening={isListening}
-        input={input}
-        setInput={setInput}
-        createNewChat={createNewChat}
-      />
+      <div className={`${mobileView === "chat" ? "flex" : "hidden"} md:flex w-full md:w-80 lg:w-96 flex-shrink-0 h-full`}>
+        <ChatSection 
+          messages={messages}
+          currentSession={currentSession}
+          handleAcceptEdit={handleAcceptEdit}
+          handleRejectEdit={handleRejectEdit}
+          isLoading={isLoading}
+          messagesEndRef={messagesEndRef}
+          referencedFileIds={referencedFileIds}
+          projectItems={projectItems}
+          setReferencedFileIds={setReferencedFileIds}
+          sendMessage={sendMessage}
+          chatMode={chatMode}
+          setChatMode={setChatMode}
+          toggleListening={toggleListening}
+          isListening={isListening}
+          input={input}
+          setInput={setInput}
+          createNewChat={createNewChat}
+          setIsSidebarOpen={setIsSidebarOpen}
+        />
+      </div>
     </div>
   );
 }

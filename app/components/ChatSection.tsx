@@ -7,7 +7,7 @@
  */
 
 import React, { RefObject, useEffect, useState, useRef } from "react";
-import { Bot, Plus, User, File, X, ImageIcon, MicOff, Mic, Send, Users } from "lucide-react";
+import { Bot, Plus, User, File, X, ImageIcon, MicOff, Mic, Send, Users, Menu } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { cn } from "@/lib/utils";
 import { TypewriterText } from "./TypewriterText";
@@ -33,6 +33,7 @@ interface ChatSectionProps {
   input: string;
   setInput: (input: string) => void;
   createNewChat: () => void;
+  setIsSidebarOpen: (isOpen: boolean) => void;
 }
 
 export const ChatSection = ({
@@ -53,6 +54,7 @@ export const ChatSection = ({
   input,
   setInput,
   createNewChat,
+  setIsSidebarOpen,
 }: ChatSectionProps) => {
   const [stats, setStats] = useState({ active: 1, total: 1 });
   const clientIdRef = useRef<string>("");
@@ -87,11 +89,19 @@ export const ChatSection = ({
   }, []);
 
   return (
-    <div className="w-80 flex flex-col h-full bg-[#0d1117] relative flex-shrink-0 border-l border-gray-800">
+    <div className="w-full flex flex-col h-full bg-[#0d1117] relative flex-shrink-0 border-l border-gray-800">
       <header className="flex items-center justify-between px-4 py-3 border-b border-gray-800 bg-[#0a233b]/50 backdrop-blur-md sticky top-0 z-10">
-        <div className="flex items-center gap-2">
-          <Bot className="w-5 h-5 text-yellow-400" />
-          <h2 className="text-sm font-bold text-gray-200">KoraGPT Chat</h2>
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={() => setIsSidebarOpen(true)}
+            className="md:hidden p-1.5 -ml-2 text-gray-400 hover:text-white transition-colors"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+          <div className="flex items-center gap-2">
+            <Bot className="w-5 h-5 text-yellow-400" />
+            <h2 className="text-sm font-bold text-gray-200">KoraGPT Chat</h2>
+          </div>
         </div>
         
         <div className="flex items-center gap-3">
