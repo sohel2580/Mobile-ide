@@ -76,7 +76,7 @@ export const ProjectTree = ({
                 <button 
                   onClick={(e) => { e.stopPropagation(); onAddToContext(item.id); }}
                   className="p-1 hover:text-green-400"
-                  title="চ্যাটে মেনশন করুন"
+                  title="Mention in chat"
                 >
                   <MessageSquare className="w-3 h-3" />
                 </button>
@@ -86,14 +86,14 @@ export const ProjectTree = ({
                   <button 
                     onClick={() => onCreate("file", item.path)}
                     className="p-1 hover:text-blue-400"
-                    title="নতুন ফাইল"
+                    title="New File"
                   >
                     <FilePlus className="w-3 h-3" />
                   </button>
                   <button 
                     onClick={() => onCreate("folder", item.path)}
                     className="p-1 hover:text-yellow-400"
-                    title="নতুন ফোল্ডার"
+                    title="New Folder"
                   >
                     <FolderPlus className="w-3 h-3" />
                   </button>
@@ -102,7 +102,7 @@ export const ProjectTree = ({
               <button 
                 onClick={() => onRemove(item.path)}
                 className="p-1 hover:text-red-400"
-                title="ডিলিট"
+                title="Delete"
               >
                 <X className="w-3 h-3" />
               </button>

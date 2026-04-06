@@ -1,9 +1,9 @@
 /**
- * @copyright Copyright (c) 2024 Kora AI. All rights reserved.
+ * @copyright Copyright (c) 2026 Taskkora. All rights reserved.
  * @license AGPL-3.0
- * @description This file is part of Kora AI - Premium Code Editor.
+ * @description This file is part of Kora AI - Premium Code Editor, a product of the Taskkora ecosystem.
  * Unauthorized copying, modification, or distribution of this file without the 
- * explicit branding of "Kora AI" is strictly prohibited.
+ * explicit branding of "Taskkora" is strictly prohibited.
  */
 
 import React, { useState, useEffect } from "react";
@@ -200,7 +200,7 @@ export const EditorSection = ({
         ) : (
           <div className="h-full flex flex-col items-center justify-center text-gray-600 bg-[#1e1e1e]">
             <Bot className="w-16 h-16 mb-4 opacity-10" />
-            <p className="text-sm font-medium">এডিট করার জন্য একটি ফাইল সিলেক্ট করুন</p>
+            <p className="text-sm font-medium">Select a file to edit</p>
           </div>
         )}
       </div>

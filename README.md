@@ -1,9 +1,10 @@
 <div align="center">
-  <img src="public/next.svg" alt="Kora AI Logo" width="200" height="auto" />
+  <img src="public/next.svg" alt="Taskkora Logo" width="200" height="auto" />
   <h1>🚀 Kora AI - Premium Code Editor</h1>
   
   <p>
-    <b>The Next-Generation, Open-Source Browser-Based AI Code Editor</b>
+    <b>The Next-Generation, Open-Source Browser-Based AI Code Editor</b><br/>
+    <i>A proud product of the Taskkora ecosystem.</i>
   </p>
 
   <p>
@@ -131,20 +132,17 @@ To use the AI features, you need to configure your Hugging Face Token in the set
 
 ## 🛡️ License & Copyright
 
-**Copyright © 2026 Kora AI. All rights reserved.**
+**Copyright © 2026 Taskkora. All rights reserved.**
 
-This project is open-source, but it is **NOT** a free-for-all. It is protected under the **GNU Affero General Public License v3.0 (AGPL-3.0)**. 
-
-### What does this mean?
-- ✅ **You CAN** fork this repository, contribute, and run it locally.
-- ✅ **You CAN** build features and submit Pull Requests.
-- ❌ **You CANNOT** steal the code, change the name to your own, and launch it as a closed-source or commercial product without open-sourcing your entire platform.
-- ❌ **You CANNOT** remove the copyright headers from the source files. The branding and identity of "Kora AI" must be respected.
-
-We actively monitor for plagiarism. We love our contributors, but we will protect our intellectual property.
+This project is open-source under the AGPL-3.0 License.
+- ✅ **You CAN** use, modify, and distribute this software for personal or commercial purposes.
+- ❌ **You CANNOT** use the "Kora AI" or "Taskkora" name, branding, or logo for any derivative works without explicit written permission.
+- ❌ **You CANNOT** remove the copyright headers from the source files. The branding and identity of "Taskkora" must be respected.
+- 🔄 **You MUST** open-source any modifications or derivative works under the same AGPL-3.0 License.
 
 ---
 
 <div align="center">
-  <b>Built with ❤️ by the Kora AI Team & Contributors</b>
+  <b>Built with ❤️ by the Taskkora Team & Contributors</b><br>
+  <i>Part of the Taskkora Ecosystem</i>
 </div>

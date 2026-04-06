@@ -1,13 +1,13 @@
 /**
- * @copyright Copyright (c) 2024 Kora AI. All rights reserved.
+ * @copyright Copyright (c) 2026 Taskkora. All rights reserved.
  * @license AGPL-3.0
- * @description This file is part of Kora AI - Premium Code Editor.
+ * @description This file is part of Kora AI - Premium Code Editor, a product of the Taskkora ecosystem.
  * Unauthorized copying, modification, or distribution of this file without the 
- * explicit branding of "Kora AI" is strictly prohibited.
+ * explicit branding of "Taskkora" is strictly prohibited.
  */
 
-import React, { RefObject } from "react";
-import { Bot, Plus, User, File, X, ImageIcon, MicOff, Mic, Send } from "lucide-react";
+import React, { RefObject, useEffect, useState, useRef } from "react";
+import { Bot, Plus, User, File, X, ImageIcon, MicOff, Mic, Send, Users } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { cn } from "@/lib/utils";
 import { TypewriterText } from "./TypewriterText";
@@ -54,16 +54,66 @@ export const ChatSection = ({
   setInput,
   createNewChat,
 }: ChatSectionProps) => {
+  const [stats, setStats] = useState({ active: 1, total: 1 });
+  const clientIdRef = useRef<string>("");
+
+  useEffect(() => {
+    let storedId = localStorage.getItem("kora_client_id");
+    if (!storedId) {
+      storedId = Math.random().toString(36).substring(2, 15);
+      localStorage.setItem("kora_client_id", storedId);
+    }
+    clientIdRef.current = storedId;
+
+    const fetchStats = async () => {
+      try {
+        const res = await fetch("/api/stats", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ clientId: clientIdRef.current })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setStats({ active: data.activeUsers, total: data.totalUsers });
+        }
+      } catch (e) {
+        console.error("Failed to fetch stats:", e);
+      }
+    };
+
+    fetchStats();
+    const interval = setInterval(fetchStats, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
   return (
-    <div className="w-80 flex flex-col h-full bg-[#0d1117] relative flex-shrink-0">
-      <header className="flex items-center justify-between px-4 py-3 border-b border-gray-800 bg-gray-900/80 backdrop-blur-md sticky top-0 z-10">
+    <div className="w-80 flex flex-col h-full bg-[#0d1117] relative flex-shrink-0 border-l border-gray-800">
+      <header className="flex items-center justify-between px-4 py-3 border-b border-gray-800 bg-[#0a233b]/50 backdrop-blur-md sticky top-0 z-10">
         <div className="flex items-center gap-2">
           <Bot className="w-5 h-5 text-yellow-400" />
           <h2 className="text-sm font-bold text-gray-200">KoraGPT Chat</h2>
         </div>
-        <button onClick={createNewChat} className="p-1.5 text-gray-400 hover:bg-gray-800 rounded-lg transition-colors">
-          <Plus className="w-4 h-4" />
-        </button>
+        
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 bg-gray-900/80 border border-gray-700/50 px-2.5 py-1 rounded-full shadow-inner">
+            <div className="flex items-center gap-1.5" title="Live Active Users">
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-green-500"></span>
+              </span>
+              <span className="text-[9px] font-medium text-green-400">{stats.active}</span>
+            </div>
+            <div className="w-px h-3 bg-gray-700"></div>
+            <div className="flex items-center gap-1" title="Total Users">
+              <Users className="w-2.5 h-2.5 text-gray-400" />
+              <span className="text-[9px] font-medium text-gray-400">{stats.total}</span>
+            </div>
+          </div>
+
+          <button onClick={createNewChat} className="p-1 text-gray-400 hover:text-white transition-colors" title="New Chat">
+            <Plus className="w-4 h-4" />
+          </button>
+        </div>
       </header>
 
       <div className="flex-1 overflow-y-auto w-full scroll-smooth custom-scrollbar">
@@ -72,8 +122,8 @@ export const ChatSection = ({
              <div className="w-12 h-12 bg-yellow-400 rounded-2xl flex items-center justify-center mb-4 shadow-xl">
                 <span className="text-xl">🤖</span>
              </div>
-             <h2 className="text-lg font-bold text-white mb-2">চ্যাট শুরু করুন</h2>
-             <p className="text-xs text-gray-400 leading-relaxed">কোড এডিট করতে বলুন বা কোনো প্রশ্ন করুন।</p>
+             <h2 className="text-lg font-bold text-white mb-2">Start Chatting</h2>
+             <p className="text-xs text-gray-400 leading-relaxed">Ask to edit code or ask any question.</p>
           </div>
         ) : (
           <div className="flex flex-col pb-32">
@@ -192,7 +242,7 @@ export const ChatSection = ({
                 ? "bg-yellow-400 text-[#0a233b] shadow-inner" 
                 : "bg-gray-800 text-gray-400 hover:bg-gray-700"
             )}
-            title={chatMode === "chat" ? "ইমেজ জেনারেশন মোড" : "চ্যাট মোড"}
+            title={chatMode === "chat" ? "Image Generation Mode" : "Chat Mode"}
           >
             <ImageIcon className="w-3.5 h-3.5" />
           </button>
@@ -205,7 +255,7 @@ export const ChatSection = ({
                 ? "bg-red-500 text-white animate-pulse shadow-lg" 
                 : "bg-gray-800 text-gray-400 hover:bg-gray-700"
             )}
-            title="ভয়েস ইনপুট"
+            title="Voice Input"
           >
             {isListening ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
           </button>

@@ -51,6 +51,6 @@ Example: \`feat: added multi-tab support in the editor\`
 Please note that this project is released with a Contributor Code of Conduct. By participating in this project you agree to abide by its terms. Be respectful and collaborative!
 
 ## 🛡️ Important Notice regarding Copyright
-By submitting code to Kora AI, you agree that your contributions will be licensed under the AGPL-3.0 License. You also agree not to remove the \`Copyright (c) 2024 Kora AI\` headers from the source files.
+By submitting code to Kora AI, you agree that your contributions will be licensed under the AGPL-3.0 License. You also agree not to remove the `Copyright (c) 2026 Taskkora` headers from the source files.
 
 We can't wait to see what you build! ❤️
