@@ -96,7 +96,7 @@ export const Sidebar = ({
       }
     } catch (error) {
       console.error("Failed to fetch Ollama models:", error);
-      alert("Ollama-তে কানেক্ট করা যাচ্ছে না। দয়া করে আপনার পিসিতে OLLAMA_ORIGINS='https://koragpt.vercel.app' সেট করে Ollama রিস্টার্ট করুন।");
+      alert("Failed to connect to Ollama. Please set OLLAMA_ORIGINS='https://koragpt.vercel.app' on your PC and restart Ollama.");
     } finally {
       setIsLoadingModels(false);
     }
