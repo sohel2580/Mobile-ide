@@ -449,6 +449,9 @@ export default function ChatApp() {
         if (provider === "custom" && baseUrl) apiUrl = `${baseUrl.replace(/\/$/, '')}/chat/completions`;
         if (provider === "glm") apiUrl = baseUrl ? `${baseUrl.replace(/\/$/, '')}/chat/completions` : "https://open.bigmodel.cn/api/paas/v4/chat/completions";
         
+        // Sanitize model name for OpenAI compatible endpoints if needed (remove spaces)
+        const sanitizedModelId = modelId.replace(/\s+/g, "-");
+
         const response = await fetch(apiUrl, {
           method: "POST",
           headers: {
@@ -456,7 +459,7 @@ export default function ChatApp() {
             "Authorization": `Bearer ${token}`
           },
           body: JSON.stringify({
-            model: modelId,
+            model: sanitizedModelId,
             messages: chatMessages,
             max_tokens: maxTokensState,
             temperature: temperature,
@@ -486,7 +489,9 @@ export default function ChatApp() {
         if (data.error) throw new Error(data.error.message || "Anthropic API Error");
         content = data.content[0].text;
       } else if (provider === "gemini") {
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${token}`, {
+        // Sanitize model name for Gemini
+        const sanitizedModelId = modelId.toLowerCase().replace(/[^a-z0-9-.]/g, "-");
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${sanitizedModelId}:generateContent?key=${token}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
