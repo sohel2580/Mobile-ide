@@ -563,6 +563,7 @@ export default function ChatApp() {
       const parsedMessages: Message[] = [];
       let lastIndex = 0;
       const newEdits: PendingEdit[] = [];
+      const newProjectFiles: ProjectItem[] = [];
 
       while ((match = editRegex.exec(processedContent)) !== null) {
         const textBefore = processedContent.substring(lastIndex, match.index).trim();
@@ -570,7 +571,22 @@ export default function ChatApp() {
 
         const filePath = match[1].trim();
         const newFileContent = match[2].trim();
-        const file = projectItems.find(item => item.path === filePath || item.name === filePath);
+        let file = projectItems.find(item => item.path === filePath || item.name === filePath);
+
+        // If file doesn't exist, create it
+        if (!file) {
+          const extension = filePath.split('.').pop() || 'txt';
+          file = {
+            id: Math.random().toString(36).substr(2, 9),
+            name: filePath.split('/').pop() || filePath,
+            type: "file",
+            path: filePath,
+            content: "", // Empty initial content, newContent will be in pending edit
+            language: extension,
+            isOpen: true
+          };
+          newProjectFiles.push(file);
+        }
 
         if (file) {
           const editId = Math.random().toString(36).substr(2, 9);
@@ -588,8 +604,17 @@ export default function ChatApp() {
             editId: editId
           });
           setActiveFileId(file.id);
+          
+          // Add to open files if not already open
+          if (!openFileIds.includes(file.id)) {
+            setOpenFileIds(prev => [...prev, file!.id]);
+          }
         }
         lastIndex = editRegex.lastIndex;
+      }
+
+      if (newProjectFiles.length > 0) {
+        setProjectItems(prev => [...prev, ...newProjectFiles]);
       }
 
       const remainingText = processedContent.substring(lastIndex).trim();
