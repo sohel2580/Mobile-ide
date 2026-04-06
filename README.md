@@ -100,6 +100,12 @@ Whether you're fixing a bug, adding a new feature, or improving documentation, *
 
 4. Open [http://localhost:3000](http://localhost:3000) in your browser.
 
+### 🔑 API Settings Setup
+To use the AI features, you need to configure your Hugging Face Token in the settings.
+<div align="center">
+  <img src="public/Instraction.jpg" width="600" alt="API Settings Instruction" />
+</div>
+
 ---
 
 ## 🖼️ Adding Images to README (Example)
