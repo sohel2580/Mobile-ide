@@ -11,6 +11,7 @@ import Editor, { DiffEditor } from "@monaco-editor/react";
 import { File, Bot, Check, X, Undo, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ProjectItem, PendingEdit } from "../types";
+import { NewsTicker } from "./NewsTicker";
 
 interface EditorSectionProps {
   activeFile: ProjectItem | undefined;
@@ -204,6 +205,9 @@ export const EditorSection = ({
           </div>
         )}
       </div>
+
+      {/* News Ticker - Above Status Bar */}
+      <NewsTicker />
 
       {/* Status Bar */}
       {activeFile && (
