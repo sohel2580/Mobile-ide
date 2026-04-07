@@ -14,7 +14,70 @@ import { Sidebar } from "./components/Sidebar";
 import { EditorSection } from "./components/EditorSection";
 import { ChatSection } from "./components/ChatSection";
 import { ProjectItem, ChatSession, Message, PendingEdit } from "./types";
+import { ClipboardState } from "./components/ProjectTree";
 import { IMAGE_MODEL_ID, SYSTEM_PROMPT, MONACO_LANGUAGE_MAPPING } from "./constants";
+import JSZip from "jszip";
+import { saveAs } from "file-saver";
+
+const createId = () => Math.random().toString(36).slice(2, 11);
+
+const cloneItem = (item: ProjectItem): ProjectItem => ({
+  ...item,
+  children: (item.children || []).map(cloneItem),
+});
+
+const flattenTree = (items: ProjectItem[], parentPath = ""): ProjectItem[] => {
+  const output: ProjectItem[] = [];
+  for (const item of items) {
+    const path = parentPath ? `${parentPath}/${item.name}` : item.name;
+    const normalized: ProjectItem = {
+      ...item,
+      path,
+      language: item.type === "file" ? (item.language || item.name.split(".").pop() || "txt") : undefined,
+    };
+    output.push(normalized);
+    if (item.type === "folder") {
+      output.push(...flattenTree(item.children || [], path));
+    }
+  }
+  return output;
+};
+
+const findNodeById = (items: ProjectItem[], id: string): ProjectItem | null => {
+  for (const item of items) {
+    if (item.id === id) return item;
+    const found = findNodeById(item.children || [], id);
+    if (found) return found;
+  }
+  return null;
+};
+
+const updateNodeById = (items: ProjectItem[], id: string, updater: (item: ProjectItem) => ProjectItem): ProjectItem[] =>
+  items.map((item) => {
+    if (item.id === id) return updater(item);
+    if (item.children?.length) {
+      return { ...item, children: updateNodeById(item.children, id, updater) };
+    }
+    return item;
+  });
+
+const removeNodeById = (items: ProjectItem[], id: string): ProjectItem[] =>
+  items
+    .filter((item) => item.id !== id)
+    .map((item) => ({
+      ...item,
+      children: item.children ? removeNodeById(item.children, id) : [],
+    }));
+
+const isDescendant = (items: ProjectItem[], parentId: string, candidateId: string): boolean => {
+  const parent = findNodeById(items, parentId);
+  if (!parent) return false;
+  const walk = (node: ProjectItem): boolean => {
+    if (node.id === candidateId) return true;
+    return (node.children || []).some(walk);
+  };
+  return (parent.children || []).some(walk);
+};
 
 export default function ChatApp() {
   const [provider, setProvider] = useState<string>("huggingface");
@@ -24,6 +87,7 @@ export default function ChatApp() {
   const [chatMode, setChatMode] = useState<"chat" | "image">("chat");
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [projectItems, setProjectItems] = useState<ProjectItem[]>([]);
+  const [clipboard, setClipboard] = useState<ClipboardState>({ item: null, action: "copy" });
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [input, setInput] = useState<string>("");
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -31,7 +95,7 @@ export default function ChatApp() {
   const [isListening, setIsListening] = useState<boolean>(false);
   const [isSpeaking, setIsSpeaking] = useState<string | null>(null);
   const [activeFileId, setActiveFileId] = useState<string | null>(null);
-  const [openFileIds, setOpenFileIds] = useState<string[]>([]); // New state for open tabs
+  const [tabs, setTabs] = useState<string[]>([]);
   const [referencedFileIds, setReferencedFileIds] = useState<string[]>([]);
   const [showApiSettings, setShowApiSettings] = useState<boolean>(false);
   const [temperature, setTemperature] = useState<number>(0.7);
@@ -43,14 +107,15 @@ export default function ChatApp() {
   const folderInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  const flatProjectItems = flattenTree(projectItems);
   const currentSession = sessions.find(s => s.id === currentSessionId);
   const messages = currentSession?.messages || [];
-  const activeFile = projectItems.find(item => item.id === activeFileId);
+  const activeFile = flatProjectItems.find(item => item.id === activeFileId);
 
   const setActiveFileHandler = (id: string) => {
     setActiveFileId(id);
-    if (!openFileIds.includes(id)) {
-      setOpenFileIds(prev => [...prev, id]);
+    if (!tabs.includes(id)) {
+      setTabs(prev => [...prev, id]);
     }
     if (window.innerWidth < 768) {
       setMobileView("editor");
@@ -60,7 +125,7 @@ export default function ChatApp() {
 
   const closeFileHandler = (id: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    setOpenFileIds(prev => {
+    setTabs(prev => {
       const newOpenFiles = prev.filter(fileId => fileId !== id);
       // If we're closing the active file, switch to another open file or null
       if (activeFileId === id) {
@@ -91,7 +156,14 @@ export default function ChatApp() {
     if (savedBaseUrl) setBaseUrl(savedBaseUrl);
     if (savedTemp) setTemperature(parseFloat(savedTemp));
     if (savedMaxTokens) setMaxTokensState(parseInt(savedMaxTokens));
-    if (savedItems) setProjectItems(JSON.parse(savedItems));
+    if (savedItems) {
+      try {
+        const parsed = JSON.parse(savedItems) as ProjectItem[];
+        setProjectItems(parsed);
+      } catch {
+        setProjectItems([]);
+      }
+    }
 
     if (savedSessions) {
       const parsed = JSON.parse(savedSessions) as ChatSession[];
@@ -117,7 +189,10 @@ export default function ChatApp() {
   }, [sessions]);
 
   useEffect(() => {
-    localStorage.setItem("hf_project_items", JSON.stringify(projectItems));
+    const timer = window.setTimeout(() => {
+      localStorage.setItem("hf_project_items", JSON.stringify(projectItems));
+    }, 3000);
+    return () => window.clearTimeout(timer);
   }, [projectItems]);
 
   useEffect(() => {
@@ -171,91 +246,113 @@ export default function ChatApp() {
     }
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, targetFolderId?: string | null) => {
     const files = e.target.files;
     if (!files) return;
 
-    Array.from(files).forEach(file => {
+    Array.from(files).forEach((file) => {
       const reader = new FileReader();
       reader.onload = (event) => {
         const content = event.target?.result as string;
         const relativePath = (file as any).webkitRelativePath || file.name;
-        const extension = file.name.split('.').pop() || 'txt';
-        
-        const pathParts = relativePath.split('/');
-        let currentPath = "";
-        
-        pathParts.forEach((part: string, index: number) => {
-          const isLast = index === pathParts.length - 1;
-          currentPath = currentPath ? `${currentPath}/${part}` : part;
-          
-          setProjectItems(prev => {
-            const exists = prev.some(item => item.path === currentPath);
-            if (!exists) {
-              const newItem: ProjectItem = {
-                id: Math.random().toString(36).substr(2, 9),
-                name: part,
-                type: isLast ? "file" : "folder",
-                path: currentPath,
-                content: isLast ? content : undefined,
-                language: isLast ? extension : undefined,
-                isOpen: true
-              };
-              return [...prev, newItem];
-            } else if (isLast && exists) {
-              return prev.map(item => 
-                item.path === currentPath ? { ...item, content: content } : item
-              );
+        const parts = relativePath.split("/").filter(Boolean);
+
+        setProjectItems((prev) => {
+          const next = [...prev];
+          let currentLevel = next;
+          let parentId: string | null = null;
+          let currentPath = "";
+
+          if (targetFolderId) {
+            const targetNode = findNodeById(next, targetFolderId);
+            const targetPath = flattenTree(next).find((node) => node.id === targetFolderId)?.path || "";
+            if (targetNode && targetNode.type === "folder") {
+              targetNode.children = targetNode.children || [];
+              currentLevel = targetNode.children;
+              parentId = targetNode.id;
+              currentPath = targetPath;
             }
-            return prev;
+          }
+
+          parts.forEach((part: string, index: number) => {
+            const isLeaf = index === parts.length - 1;
+            currentPath = currentPath ? `${currentPath}/${part}` : part;
+            let existing = currentLevel.find((item) => item.name === part && item.parentId === parentId);
+
+            if (!existing) {
+              existing = {
+                id: createId(),
+                name: part,
+                type: isLeaf ? "file" : "folder",
+                parentId,
+                path: currentPath,
+                content: isLeaf ? content : undefined,
+                language: isLeaf ? (part.split(".").pop() || "txt") : undefined,
+                isOpen: true,
+                children: isLeaf ? [] : [],
+              };
+              currentLevel.push(existing);
+            } else if (isLeaf && existing.type === "file") {
+              existing.content = content;
+            }
+
+            if (existing.type === "folder") {
+              existing.children = existing.children || [];
+              currentLevel = existing.children;
+              parentId = existing.id;
+            }
           });
+
+          return next;
         });
       };
       reader.readAsText(file);
     });
   };
 
-  const createNewItem = (type: "file" | "folder", parentPath?: string) => {
-    const name = prompt(`Enter name for new ${type === "file" ? "file" : "folder"}:`);
-    if (!name) return;
+  const createNewItem = (type: "file" | "folder", parentId?: string | null) => {
+    const name = prompt(`Enter name for new ${type}:`);
+    if (!name?.trim()) return;
+    const newItem: ProjectItem = {
+      id: createId(),
+      name: name.trim(),
+      type,
+      parentId: parentId || null,
+      path: name.trim(),
+      content: type === "file" ? "" : undefined,
+      language: type === "file" ? (name.split(".").pop() || "txt") : undefined,
+      children: type === "folder" ? [] : [],
+      isOpen: true,
+    };
 
-    const fullPath = parentPath ? `${parentPath}/${name}` : name;
-    
-    setProjectItems(prev => {
-      if (prev.some(i => i.path === fullPath)) {
-        alert("File or folder with this name already exists!");
-        return prev;
-      }
-      
-      const newItem: ProjectItem = {
-        id: Math.random().toString(36).substr(2, 9),
-        name: name,
-        type: type,
-        path: fullPath,
-        content: type === "file" ? "" : undefined,
-        language: type === "file" ? name.split('.').pop() : undefined,
-        isOpen: true
-      };
-      return [...prev, newItem];
+    setProjectItems((prev) => {
+      if (!parentId) return [...prev, newItem];
+      return updateNodeById(prev, parentId, (node) => ({
+        ...node,
+        isOpen: true,
+        children: [...(node.children || []), newItem],
+      }));
     });
   };
 
-  const removeItem = (path: string) => {
-    if (!confirm("Are you sure you want to delete this?")) return;
-    setProjectItems(prev => prev.filter(item => !item.path.startsWith(path)));
+  const renameItem = (id: string, nextName: string) => {
+    setProjectItems((prev) => updateNodeById(prev, id, (item) => ({ ...item, name: nextName })));
   };
 
-  const toggleFolder = (path: string) => {
-    setProjectItems(prev => prev.map(item => 
-      item.path === path ? { ...item, isOpen: !item.isOpen } : item
-    ));
+  const removeItem = (id: string) => {
+    if (!confirm("Are you sure you want to delete this item?")) return;
+    setProjectItems((prev) => removeNodeById(prev, id));
+    setTabs((prev) => prev.filter((tabId) => tabId !== id));
+    if (activeFileId === id) setActiveFileId(null);
+  };
+
+  const toggleFolder = (id: string) => {
+    setProjectItems((prev) => updateNodeById(prev, id, (item) => ({ ...item, isOpen: !item.isOpen })));
   };
 
   const handleEditorChange = (value: string | undefined) => {
     if (!activeFileId) return;
-    setProjectItems(prev => prev.map(item => 
-      item.id === activeFileId ? { ...item, content: value || "" } : item
-    ));
+    setProjectItems((prev) => updateNodeById(prev, activeFileId, (item) => ({ ...item, content: value || "" })));
   };
 
   const handleAcceptEdit = (editId: string) => {
@@ -266,9 +363,7 @@ export default function ChatApp() {
     const edit = edits.find(e => e.id === editId);
     if (!edit) return;
 
-    setProjectItems(prevItems => prevItems.map(item => 
-      item.id === edit.fileId ? { ...item, content: edit.newContent } : item
-    ));
+    setProjectItems((prevItems) => updateNodeById(prevItems, edit.fileId, (item) => ({ ...item, content: edit.newContent })));
 
     setSessions(prev => prev.map(s => {
       if (s.id === currentSessionId) {
@@ -294,7 +389,7 @@ export default function ChatApp() {
     // If it was a new file, remove it from the file system
     if (edit.isNewFile) {
       setProjectItems(prev => prev.filter(item => item.id !== edit.fileId));
-      setOpenFileIds(prev => prev.filter(id => id !== edit.fileId));
+      setTabs(prev => prev.filter(id => id !== edit.fileId));
       if (activeFileId === edit.fileId) setActiveFileId(null);
     }
 
@@ -309,6 +404,117 @@ export default function ChatApp() {
       }
       return s;
     }));
+  };
+
+  const copyItem = (id: string) => {
+    const item = findNodeById(projectItems, id);
+    if (!item) return;
+    setClipboard({ item: cloneItem(item), action: "copy" });
+  };
+
+  const cutItem = (id: string) => {
+    const item = findNodeById(projectItems, id);
+    if (!item) return;
+    setClipboard({ item: cloneItem(item), action: "cut" });
+  };
+
+  const pasteIntoFolder = (folderId: string) => {
+    if (!clipboard.item) return;
+    const clipboardItem = clipboard.item;
+    setProjectItems((prev) => {
+      const folder = findNodeById(prev, folderId);
+      if (!folder || folder.type !== "folder") return prev;
+
+      let source: ProjectItem = clipboardItem;
+      let next = prev;
+      if (clipboard.action === "cut") {
+        if (source.id === folderId || isDescendant(prev, source.id, folderId)) return prev;
+        next = removeNodeById(prev, source.id);
+      } else {
+        source = cloneItem({ ...clipboardItem, id: createId() });
+      }
+
+      source.parentId = folderId;
+      const merged = updateNodeById(next, folderId, (node) => ({
+        ...node,
+        isOpen: true,
+        children: [...(node.children || []), source],
+      }));
+      return merged;
+    });
+    if (clipboard.action === "cut") setClipboard({ item: null, action: "copy" });
+  };
+
+  const shareFileToChat = (id: string) => {
+    const file = flatProjectItems.find((item) => item.id === id && item.type === "file");
+    if (!file) return;
+    setInput(`I need help with this file:\n${file.content || ""}`);
+    if (window.innerWidth < 768) setMobileView("chat");
+  };
+
+  const downloadFile = (id: string) => {
+    const file = flatProjectItems.find((item) => item.id === id && item.type === "file");
+    if (!file) return;
+    const blob = new Blob([file.content || ""], { type: "text/plain;charset=utf-8" });
+    saveAs(blob, file.name);
+  };
+
+  const runFileInConsole = (id: string) => {
+    const file = flatProjectItems.find((item) => item.id === id && item.type === "file");
+    if (!file) return;
+    const logMessage: Message = {
+      role: "assistant",
+      content: `Console run requested for \`${file.name}\`.\n\n${file.content || ""}`,
+    };
+    setSessions((prev) => prev.map((session) => (
+      session.id === currentSessionId ? { ...session, messages: [...session.messages, logMessage] } : session
+    )));
+  };
+
+  const addNodeToZip = (zip: JSZip, node: ProjectItem, parentPath = "") => {
+    const currentPath = parentPath ? `${parentPath}/${node.name}` : node.name;
+    if (node.type === "folder") {
+      if (node.name === "node_modules" || node.name === ".git") return;
+      const folder = zip.folder(currentPath);
+      (node.children || []).forEach((child) => {
+        if (folder) addNodeToZip(zip, child, currentPath);
+      });
+      return;
+    }
+    zip.file(currentPath, node.content || "");
+  };
+
+  const downloadFolder = async (id: string) => {
+    const folder = findNodeById(projectItems, id);
+    if (!folder || folder.type !== "folder") return;
+    const zip = new JSZip();
+    addNodeToZip(zip, folder);
+    const blob = await zip.generateAsync({ type: "blob" });
+    saveAs(blob, `${folder.name}.zip`);
+  };
+
+  const downloadProject = async () => {
+    const zip = new JSZip();
+    projectItems.forEach((item) => addNodeToZip(zip, item));
+    const blob = await zip.generateAsync({ type: "blob" });
+    saveAs(blob, "kora-project.zip");
+  };
+
+  const moveByDragDrop = (draggedId: string, folderId: string) => {
+    if (draggedId === folderId) return;
+    setProjectItems((prev) => {
+      const dragged = findNodeById(prev, draggedId);
+      const folder = findNodeById(prev, folderId);
+      if (!dragged || !folder || folder.type !== "folder") return prev;
+      if (isDescendant(prev, draggedId, folderId)) return prev;
+      const withoutDragged = removeNodeById(prev, draggedId);
+      const moved = { ...cloneItem(dragged), parentId: folderId };
+      return updateNodeById(withoutDragged, folderId, (node) => ({
+        ...node,
+        isOpen: true,
+        children: [...(node.children || []), moved],
+      }));
+    });
   };
 
   const toggleListening = () => {
@@ -418,15 +624,15 @@ export default function ChatApp() {
 
       // --- STEP 1: Context Injection (File Tree, not full content) ---
       const generateFileTreeString = (): string => {
-        if (projectItems.length === 0) return "(Empty project)";
-        return projectItems.map(f => `${f.type === "folder" ? "📁" : "📄"} ${f.path}`).join("\n");
+        if (flatProjectItems.length === 0) return "(Empty project)";
+        return flatProjectItems.map(f => `${f.type === "folder" ? "📁" : "📄"} ${f.path}`).join("\n");
       };
 
       const fileTreeContext = `\n\n[PROJECT FILE TREE]\n${generateFileTreeString()}\n[END FILE TREE]`;
 
       const referencedFileContext = referencedFileIds.length > 0 
         ? "\n\nUser is specifically referring to these files:\n" + 
-          projectItems.filter(item => referencedFileIds.includes(item.id)).map(f => {
+          flatProjectItems.filter(item => referencedFileIds.includes(item.id)).map(f => {
             return `--- ${f.path} ---\n${f.content || "(empty)"}`;
           }).join("\n\n")
         : "";
@@ -615,7 +821,7 @@ export default function ChatApp() {
           const readActionMessages: Message[] = [];
 
           for (const req of readRequests) {
-            const file = projectItems.find(f => f.path === req.fileName || f.name === req.fileName);
+            const file = flatProjectItems.find(f => f.path === req.fileName || f.name === req.fileName);
             if (file && file.content !== undefined) {
               toolResponse += `\n[FILE: ${file.path}]\n${file.content}\n[END FILE: ${file.path}]\n`;
               readActionMessages.push({
@@ -660,7 +866,7 @@ export default function ChatApp() {
         while ((mdMatch = markdownCodeRegex.exec(cleanContent)) !== null) {
           const fileName = mdMatch[1].trim();
           const codeContent = mdMatch[2].trim();
-          const fileExists = projectItems.find(f => f.name === fileName || f.path === fileName);
+          const fileExists = flatProjectItems.find(f => f.name === fileName || f.path === fileName);
           
           if (fileExists && !cleanContent.includes(`<<<<EDIT_START: ${fileName}>>>>`)) {
             const fakeEditBlock = `<<<<EDIT_START: ${fileExists.path}>>>>\n${codeContent}\n<<<<EDIT_END>>>>`;
@@ -676,7 +882,7 @@ export default function ChatApp() {
           const findStr = koraEditMatch[2].trim();
           const replaceStr = koraEditMatch[3].trim();
 
-          const fileToEdit = projectItems.find(f => f.path === editFileName || f.name === editFileName);
+          const fileToEdit = flatProjectItems.find(f => f.path === editFileName || f.name === editFileName);
           if (fileToEdit && fileToEdit.content !== undefined) {
             if (fileToEdit.content.includes(findStr)) {
               const updatedContent = fileToEdit.content.replace(findStr, replaceStr);
@@ -710,7 +916,7 @@ export default function ChatApp() {
           fileName = fileName.trim();
           codeContent = codeContent.trim();
           
-          let existingFile = projectItems.find(item => item.path === fileName || item.name === fileName);
+          let existingFile = flatProjectItems.find(item => item.path === fileName || item.name === fileName);
           
           if (existingFile) {
             const editId = Math.random().toString(36).substr(2, 9);
@@ -736,13 +942,15 @@ export default function ChatApp() {
           } else {
             const extension = fileName.split('.').pop() || 'txt';
             const newFile: ProjectItem = {
-              id: Math.random().toString(36).substr(2, 9),
+              id: createId(),
               name: fileName.split('/').pop() || fileName,
               type: "file",
+              parentId: null,
               path: fileName,
               content: "", // Start with empty content, show new content in PendingEdit
               language: extension,
-              isOpen: true
+              isOpen: true,
+              children: [],
             };
             newProjectFiles.push(newFile);
             affectedFileIds.push(newFile.id);
@@ -779,19 +987,21 @@ export default function ChatApp() {
 
           const filePath = match[1].trim();
           const newFileContent = match[2].trim();
-          let file = projectItems.find(item => item.path === filePath || item.name === filePath) ||
+          let file = flatProjectItems.find(item => item.path === filePath || item.name === filePath) ||
                      newProjectFiles.find(item => item.path === filePath || item.name === filePath);
 
           if (!file) {
             const extension = filePath.split('.').pop() || 'txt';
             file = {
-              id: Math.random().toString(36).substr(2, 9),
+              id: createId(),
               name: filePath.split('/').pop() || filePath,
               type: "file",
+              parentId: null,
               path: filePath,
               content: "",
               language: extension,
-              isOpen: true
+              isOpen: true,
+              children: [],
             };
             newProjectFiles.push(file);
           }
@@ -823,7 +1033,7 @@ export default function ChatApp() {
         }
         
         if (affectedFileIds.length > 0) {
-          setOpenFileIds(prev => {
+          setTabs(prev => {
             const newOpenIds = [...prev];
             affectedFileIds.forEach(id => {
               if (!newOpenIds.includes(id)) newOpenIds.push(id);
@@ -875,6 +1085,17 @@ export default function ChatApp() {
           createNewItem={createNewItem}
           setActiveFileId={setActiveFileHandler}
           setReferencedFileIds={setReferencedFileIds}
+          renameItem={renameItem}
+          clipboard={clipboard}
+          copyItem={copyItem}
+          cutItem={cutItem}
+          pasteIntoFolder={pasteIntoFolder}
+          shareFileToChat={shareFileToChat}
+          downloadFile={downloadFile}
+          runFileInConsole={runFileInConsole}
+          downloadFolder={downloadFolder}
+          downloadProject={downloadProject}
+          moveByDragDrop={moveByDragDrop}
         activeFileId={activeFileId}
         sessions={sessions}
         setCurrentSessionId={setCurrentSessionId}
@@ -899,7 +1120,7 @@ export default function ChatApp() {
       <div className={`flex-1 overflow-hidden relative ${mobileView === "editor" ? "flex" : "hidden"} md:flex`}>
         <EditorSection 
           activeFile={activeFile}
-          openFiles={projectItems.filter(f => openFileIds.includes(f.id))}
+          openFiles={flatProjectItems.filter(f => tabs.includes(f.id))}
           setActiveFileId={setActiveFileHandler}
           closeFile={closeFileHandler}
           getMonacoLanguage={getMonacoLanguage}
@@ -927,7 +1148,7 @@ export default function ChatApp() {
           isLoading={isLoading}
           messagesEndRef={messagesEndRef}
           referencedFileIds={referencedFileIds}
-          projectItems={projectItems}
+          projectItems={flatProjectItems}
           setReferencedFileIds={setReferencedFileIds}
           sendMessage={sendMessage}
           chatMode={chatMode}

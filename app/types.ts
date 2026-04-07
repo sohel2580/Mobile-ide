@@ -2,10 +2,12 @@ export interface ProjectItem {
   id: string;
   name: string;
   type: "file" | "folder";
+  parentId: string | null;
   content?: string;
+  children?: ProjectItem[];
   language?: string;
-  path: string;
   isOpen?: boolean;
+  path: string;
 }
 
 export interface PendingEdit {

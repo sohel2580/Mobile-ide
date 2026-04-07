@@ -60,6 +60,19 @@ Kora AI is built using modern web technologies to provide a native-like IDE expe
 - **📊 Live Statistics**: Real-time active users and total viewers tracking powered by MongoDB.
 - **📰 News Ticker**: Stay updated with the latest repository commits directly from the editor UI.
 
+### 🆕 Latest IDE Explorer Upgrade (VS Code Style)
+
+- **🌲 Recursive File System**: Upgraded explorer data model to support deeply nested folders and files with parent-child relationships.
+- **📂 Smart Folder Actions**: Right-click and three-dot menu now supports Create File, Create Folder, Import File, Import Folder, Rename, Copy, Move, Paste, Download, and Delete.
+- **📌 Folder-Aware Shortcuts**: Top explorer shortcut actions now work on the currently selected folder, so users can create or import directly inside the target folder.
+- **🗂️ Multi-Tab Editing**: Improved tab state handling for opening, switching, and managing multiple files.
+- **💾 Auto-Save Protection**: Entire workspace tree is persisted to localStorage with debounce to reduce data-loss risk.
+- **🧩 Contextual File Icons**: Added extension-based icons for Python, JavaScript, HTML, CSS, JSON, TypeScript, and generic files.
+- **📦 Download Options**: Supports single file download, folder zip download, and full project export as ZIP.
+- **🚫 Export Exclusions**: Full project ZIP export ignores `node_modules` and `.git` folders to keep package size clean.
+- **🖱️ Drag-and-Drop Move**: Basic drag-and-drop support for moving files/folders into folders.
+- **📐 Sidebar Layout Optimization**: Explorer area expanded for more file space, and Recent section moved lower for better usability.
+
 ---
 
 ## 🎯 Future Improvements (Areas for Contribution)

@@ -7,9 +7,9 @@
  */
 
 import React, { RefObject, useState, useEffect } from "react";
-import { Bot, Plus, X, FilePlus, FolderPlus, Plus as PlusIcon, Folder, ChevronDown, ChevronRight, RefreshCw } from "lucide-react";
+import { Bot, Plus, X, FilePlus, FolderPlus, Plus as PlusIcon, Folder, ChevronDown, ChevronRight, RefreshCw, Download } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { ProjectTree } from "./ProjectTree";
+import { ClipboardState, ProjectTree } from "./ProjectTree";
 import { ProjectItem, ChatSession } from "../types";
 
 interface SidebarProps {
@@ -17,11 +17,22 @@ interface SidebarProps {
   setIsSidebarOpen: (open: boolean) => void;
   createNewChat: () => void;
   projectItems: ProjectItem[];
-  toggleFolder: (path: string) => void;
-  removeItem: (path: string) => void;
-  createNewItem: (type: "file" | "folder", parentPath?: string) => void;
+  createNewItem: (type: "file" | "folder", parentId?: string | null) => void;
   setActiveFileId: (id: string) => void;
   setReferencedFileIds: (updater: (prev: string[]) => string[]) => void;
+  renameItem: (id: string, nextName: string) => void;
+  removeItem: (id: string) => void;
+  toggleFolder: (id: string) => void;
+  clipboard: ClipboardState;
+  copyItem: (id: string) => void;
+  cutItem: (id: string) => void;
+  pasteIntoFolder: (folderId: string) => void;
+  shareFileToChat: (id: string) => void;
+  downloadFile: (id: string) => void;
+  runFileInConsole: (id: string) => void;
+  downloadFolder: (id: string) => void;
+  downloadProject: () => void;
+  moveByDragDrop: (draggedId: string, folderId: string) => void;
   activeFileId: string | null;
   sessions: ChatSession[];
   setCurrentSessionId: (id: string) => void;
@@ -40,7 +51,7 @@ interface SidebarProps {
   saveSettings: () => void;
   fileInputRef: RefObject<HTMLInputElement | null>;
   folderInputRef: RefObject<HTMLInputElement | null>;
-  handleFileUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  handleFileUpload: (e: React.ChangeEvent<HTMLInputElement>, targetFolderId?: string | null) => void;
 }
 
 export const Sidebar = ({
@@ -53,6 +64,17 @@ export const Sidebar = ({
   createNewItem,
   setActiveFileId,
   setReferencedFileIds,
+  renameItem,
+  clipboard,
+  copyItem,
+  cutItem,
+  pasteIntoFolder,
+  shareFileToChat,
+  downloadFile,
+  runFileInConsole,
+  downloadFolder,
+  downloadProject,
+  moveByDragDrop,
   activeFileId,
   sessions,
   setCurrentSessionId,
@@ -75,6 +97,8 @@ export const Sidebar = ({
 }: SidebarProps) => {
   const [ollamaModels, setOllamaModels] = useState<string[]>([]);
   const [isLoadingModels, setIsLoadingModels] = useState(false);
+  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
+  const [pendingImportFolderId, setPendingImportFolderId] = useState<string | null>(null);
 
   const fetchOllamaModels = async () => {
     if (provider !== "ollama") return;
@@ -141,25 +165,55 @@ export const Sidebar = ({
         </div>
 
         {/* Project Explorer Section */}
-        <div className="p-4 border-b border-gray-700 flex flex-col gap-4 flex-shrink-0">
+        <div className="p-4 border-b border-gray-700 flex-1 flex flex-col gap-4 min-h-0">
           <div className="flex items-center justify-between">
             <h2 className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em]">Explorer</h2>
             <div className="flex items-center gap-1">
-              <button onClick={() => createNewItem("file")} className="p-1 text-gray-400 hover:text-blue-400 transition-colors" title="New File">
+              <button onClick={() => createNewItem("file", selectedFolderId)} className="p-1 text-gray-400 hover:text-blue-400 transition-colors" title={selectedFolderId ? "New File in Selected Folder" : "New File"}>
                 <FilePlus className="w-3.5 h-3.5" />
               </button>
-              <button onClick={() => createNewItem("folder")} className="p-1 text-gray-400 hover:text-yellow-400 transition-colors" title="New Folder">
+              <button onClick={() => createNewItem("folder", selectedFolderId)} className="p-1 text-gray-400 hover:text-yellow-400 transition-colors" title={selectedFolderId ? "New Folder in Selected Folder" : "New Folder"}>
                 <FolderPlus className="w-3.5 h-3.5" />
               </button>
-              <button onClick={() => fileInputRef.current?.click()} className="p-1 text-gray-400 hover:text-green-400 transition-colors" title="Upload File">
+              <button onClick={downloadProject} className="p-1 text-gray-400 hover:text-cyan-400 transition-colors" title="Download Full Project">
+                <Download className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={() => {
+                  setPendingImportFolderId(selectedFolderId);
+                  fileInputRef.current?.click();
+                }}
+                className="p-1 text-gray-400 hover:text-green-400 transition-colors"
+                title={selectedFolderId ? "Import File to Selected Folder" : "Upload File"}
+              >
                 <PlusIcon className="w-3.5 h-3.5" />
               </button>
-              <button onClick={() => folderInputRef.current?.click()} className="p-1 text-gray-400 hover:text-orange-400 transition-colors" title="Upload Folder">
+              <button
+                onClick={() => {
+                  setPendingImportFolderId(selectedFolderId);
+                  folderInputRef.current?.click();
+                }}
+                className="p-1 text-gray-400 hover:text-orange-400 transition-colors"
+                title={selectedFolderId ? "Import Folder to Selected Folder" : "Upload Folder"}
+              >
                 <Folder className="w-3.5 h-3.5" />
               </button>
             </div>
-            <input type="file" ref={fileInputRef} onChange={handleFileUpload} multiple className="hidden" accept=".js,.ts,.jsx,.tsx,.py,.html,.css,.json,.md,.txt,.c,.cpp,.java,.go,.php,.rb" />
-            <input type="file" ref={folderInputRef} onChange={handleFileUpload} className="hidden" 
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={(e) => {
+                handleFileUpload(e, pendingImportFolderId);
+                setPendingImportFolderId(null);
+              }}
+              multiple
+              className="hidden"
+              accept=".js,.ts,.jsx,.tsx,.py,.html,.css,.json,.md,.txt,.c,.cpp,.java,.go,.php,.rb"
+            />
+            <input type="file" ref={folderInputRef} onChange={(e) => {
+              handleFileUpload(e, pendingImportFolderId);
+              setPendingImportFolderId(null);
+            }} className="hidden" 
               // @ts-ignore
               webkitdirectory="" 
               // @ts-ignore
@@ -167,17 +221,34 @@ export const Sidebar = ({
             />
           </div>
           
-          <div className="max-h-64 overflow-y-auto custom-scrollbar -ml-2">
+          <div className="flex-1 overflow-y-auto custom-scrollbar -ml-2 min-h-0">
             {projectItems.length === 0 ? (
               <p className="text-[10px] text-gray-500 italic text-center py-2">Empty</p>
             ) : (
               <ProjectTree 
                 items={projectItems} 
-                onToggle={toggleFolder} 
-                onRemove={removeItem} 
-                onCreate={createNewItem}
-                onFileSelect={setActiveFileId}
-                onAddToContext={(id) => setReferencedFileIds(prev => prev.includes(id) ? prev : [...prev, id])}
+                onToggleFolder={toggleFolder}
+                onDelete={removeItem}
+                onOpenFile={setActiveFileId}
+                selectedFolderId={selectedFolderId}
+                onSelectFolder={setSelectedFolderId}
+                onCreateInFolder={(type, folderId) => createNewItem(type, folderId)}
+                onImportIntoFolder={(folderId, target) => {
+                  setSelectedFolderId(folderId);
+                  setPendingImportFolderId(folderId);
+                  if (target === "file") fileInputRef.current?.click();
+                  else folderInputRef.current?.click();
+                }}
+                onRename={renameItem}
+                clipboard={clipboard}
+                onCopy={copyItem}
+                onCut={cutItem}
+                onPasteIntoFolder={pasteIntoFolder}
+                onShareToChat={shareFileToChat}
+                onDownloadFile={downloadFile}
+                onRunConsole={runFileInConsole}
+                onDownloadFolder={downloadFolder}
+                onDropIntoFolder={moveByDragDrop}
                 activeFileId={activeFileId}
               />
             )}
@@ -185,7 +256,7 @@ export const Sidebar = ({
         </div>
 
         {/* Recent Chats Section */}
-        <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+        <div className="p-4 border-t border-gray-700 max-h-48 overflow-y-auto custom-scrollbar">
             <h2 className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em] mb-4">Recent</h2>
             <div className="space-y-1">
                {sessions.map((s) => (
