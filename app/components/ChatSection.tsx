@@ -7,13 +7,16 @@
  */
 
 import React, { RefObject, useEffect, useState, useRef } from "react";
-import { Bot, Plus, User, File, X, ImageIcon, MicOff, Mic, Send, Users, Menu } from "lucide-react";
+import { Bot, Plus, User, File, X, ImageIcon, MicOff, Mic, Send, Users, Menu, MessageSquare } from "lucide-react";
 import ReactMarkdown from "react-markdown";
+import Pusher from "pusher-js";
 import { cn } from "@/lib/utils";
 import { TypewriterText } from "./TypewriterText";
 import { CodeBlock } from "./CodeBlock";
 import { DiffView } from "./DiffView";
 import { Message, ChatSession, ProjectItem } from "../types";
+import { LiveToastNotification } from "./LiveToastNotification";
+import { CommunityChatPanel } from "./CommunityChatPanel";
 
 interface ChatSectionProps {
   messages: Message[];
@@ -59,7 +62,14 @@ export const ChatSection = ({
   const [stats, setStats] = useState({ active: 1, total: 1 });
   const clientIdRef = useRef<string>("");
 
+  // Community Chat State
+  const [isCommunityChatOpen, setIsCommunityChatOpen] = useState(false);
+  const [communityMessages, setCommunityMessages] = useState<any[]>([]);
+  const [toastMessage, setToastMessage] = useState<{ content: string; sender: string } | null>(null);
+
+  // Initialize Pusher and Fetch Initial Messages
   useEffect(() => {
+    // Ensure clientId is set first
     let storedId = localStorage.getItem("kora_client_id");
     if (!storedId) {
       storedId = Math.random().toString(36).substring(2, 15);
@@ -67,6 +77,122 @@ export const ChatSection = ({
     }
     clientIdRef.current = storedId;
 
+    // Fetch initial messages from MongoDB
+    const fetchMessages = async () => {
+      try {
+        const res = await fetch("/api/community-chat");
+        if (res.ok) {
+          const data = await res.json();
+          // Map backend data to UI expected format
+          const formattedMessages = data.map((msg: any) => ({
+            id: msg.id || msg._id,
+            sender: msg.sender,
+            content: msg.content,
+            timestamp: new Date(msg.timestamp || Date.now()),
+            isSelf: msg.clientId === clientIdRef.current,
+          }));
+          
+          setCommunityMessages((prev) => {
+            // If polling found new messages that aren't ours, show toast
+            if (prev.length > 0 && formattedMessages.length > prev.length) {
+              const newMsgs = formattedMessages.filter((fm: any) => !prev.some((pm: any) => pm.id === fm.id));
+              newMsgs.forEach((msg: any) => {
+                if (!msg.isSelf) {
+                  setIsCommunityChatOpen((currentOpenState) => {
+                    if (!currentOpenState) {
+                      setToastMessage({ content: msg.content, sender: msg.sender });
+                    }
+                    return currentOpenState;
+                  });
+                }
+              });
+            }
+            return formattedMessages;
+          });
+        }
+      } catch (error) {
+        console.error("Failed to load community messages:", error);
+      }
+    };
+    fetchMessages();
+
+    // Only connect Pusher if keys are configured (we pass them through env vars exposed to client)
+    const pusherKey = process.env.NEXT_PUBLIC_PUSHER_KEY;
+    const pusherCluster = process.env.NEXT_PUBLIC_PUSHER_CLUSTER;
+
+    if (pusherKey && pusherCluster) {
+      const pusher = new Pusher(pusherKey, { cluster: pusherCluster });
+      const channel = pusher.subscribe("community-chat");
+
+      channel.bind("new-message", (data: any) => {
+        // Prevent duplicating own message if already added optimistically
+        if (data.clientId === clientIdRef.current) return;
+
+        const newMsg = {
+          id: data.id,
+          sender: data.sender,
+          content: data.content,
+          timestamp: new Date(data.timestamp),
+          isSelf: false,
+        };
+
+        setCommunityMessages((prev) => {
+          // Double check it's not already there
+          if (prev.some(m => m.id === newMsg.id)) return prev;
+          return [...prev, newMsg];
+        });
+
+        // Show toast notification if panel is closed
+        // Use a function to check current state value
+        setIsCommunityChatOpen((currentOpenState) => {
+          if (!currentOpenState) {
+            setToastMessage({ content: newMsg.content, sender: newMsg.sender });
+          }
+          return currentOpenState;
+        });
+      });
+
+      return () => {
+        pusher.unsubscribe("community-chat");
+        pusher.disconnect();
+      };
+    } else {
+      // Fallback: Poll every 3 seconds if Pusher is not configured
+      const interval = setInterval(fetchMessages, 3000);
+      return () => clearInterval(interval);
+    }
+  }, []);
+
+  const handleSendCommunityMessage = async (content: string) => {
+    // 1. Optimistic UI Update
+    const optimisticMsg = {
+      id: Math.random().toString(36).substring(2, 9), // Temp ID
+      sender: "You",
+      content,
+      timestamp: new Date(),
+      isSelf: true,
+      clientId: clientIdRef.current, // Used by pusher to ignore self
+    };
+    setCommunityMessages((prev) => [...prev, optimisticMsg]);
+
+    // 2. Send to Backend
+    try {
+      await fetch("/api/community-chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sender: "User" + clientIdRef.current.substring(0, 3), // Generate a dummy name
+          content,
+          clientId: clientIdRef.current,
+        }),
+      });
+    } catch (error) {
+      console.error("Failed to send message:", error);
+      // Optional: Remove optimistic message on failure or show error
+    }
+  };
+
+  useEffect(() => {
     const fetchStats = async () => {
       try {
         const res = await fetch("/api/stats", {
@@ -120,11 +246,37 @@ export const ChatSection = ({
             </div>
           </div>
 
-          <button onClick={createNewChat} className="p-1 text-gray-400 hover:text-white transition-colors" title="New Chat">
+          <div className="relative">
+            <button 
+              data-community-toggle
+              onClick={() => setIsCommunityChatOpen(!isCommunityChatOpen)}
+              className={cn(
+                "p-1.5 rounded-md transition-colors",
+                isCommunityChatOpen ? "bg-gray-800 text-white" : "text-gray-400 hover:text-white hover:bg-gray-800/50"
+              )}
+              title="Community Chat"
+            >
+              <MessageSquare className="w-4 h-4" />
+            </button>
+            <CommunityChatPanel 
+              isOpen={isCommunityChatOpen}
+              onClose={() => setIsCommunityChatOpen(false)}
+              messages={communityMessages}
+              onSendMessage={handleSendCommunityMessage}
+            />
+          </div>
+
+          <button onClick={createNewChat} className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-800/50 rounded-md transition-colors" title="New Chat">
             <Plus className="w-4 h-4" />
           </button>
         </div>
       </header>
+
+      <LiveToastNotification 
+        message={toastMessage?.content || null} 
+        sender={toastMessage?.sender || null} 
+        onDismiss={() => setToastMessage(null)} 
+      />
 
       <div className="flex-1 overflow-y-auto w-full scroll-smooth custom-scrollbar">
         {messages.length === 0 ? (
