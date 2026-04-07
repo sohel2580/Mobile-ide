@@ -72,6 +72,9 @@ Kora AI is built using modern web technologies to provide a native-like IDE expe
 - **🚫 Export Exclusions**: Full project ZIP export ignores `node_modules` and `.git` folders to keep package size clean.
 - **🖱️ Drag-and-Drop Move**: Basic drag-and-drop support for moving files/folders into folders.
 - **📐 Sidebar Layout Optimization**: Explorer area expanded for more file space, and Recent section moved lower for better usability.
+- **🔗 Share to AI with Real Context**: Share action now auto-attaches the selected file as an AI reference instead of only writing plain text in chat input.
+- **@ Mention File/Folder Picker**: Type `@` in chat to search and select files/folders with keyboard support (arrow keys, enter, escape).
+- **✅ Context Menu Action Feedback**: Context menu now auto-closes after action and shows quick feedback for Copy/Cut/Paste/Share/Delete operations.
 
 ---
 

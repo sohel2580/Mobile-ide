@@ -189,6 +189,7 @@ export const ProjectTree = ({
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [renamingItemId, setRenamingItemId] = useState<string | null>(null);
   const [renamingValue, setRenamingValue] = useState("");
+  const [actionFeedback, setActionFeedback] = useState<string | null>(null);
 
   const findById = (nodes: ProjectItem[], id: string): ProjectItem | null => {
     for (const node of nodes) {
@@ -206,6 +207,15 @@ export const ProjectTree = ({
     window.addEventListener("click", close);
     return () => window.removeEventListener("click", close);
   }, []);
+
+  const runAction = (callback: () => void, feedback?: string) => {
+    callback();
+    setContextMenu(null);
+    if (feedback) {
+      setActionFeedback(feedback);
+      window.setTimeout(() => setActionFeedback(null), 1200);
+    }
+  };
 
   const sortedRoots = [...items].sort((a, b) => {
     if (a.type === b.type) return a.name.localeCompare(b.name);
@@ -241,36 +251,41 @@ export const ProjectTree = ({
         >
           {menuItem.type === "file" && (
             <>
-              <button className="w-full rounded px-2 py-1.5 text-left text-xs hover:bg-gray-700" onClick={() => onOpenFile(menuItem.id)}>Open</button>
+              <button className="w-full rounded px-2 py-1.5 text-left text-xs hover:bg-gray-700" onClick={() => runAction(() => onOpenFile(menuItem.id))}>Open</button>
               <button className="w-full rounded px-2 py-1.5 text-left text-xs hover:bg-gray-700" onClick={() => { setRenamingItemId(menuItem.id); setRenamingValue(menuItem.name); setContextMenu(null); }}>Rename</button>
-              <button className="w-full rounded px-2 py-1.5 text-left text-xs hover:bg-gray-700" onClick={() => onShareToChat(menuItem.id)}>Share to AI Chat</button>
-              <button className="w-full rounded px-2 py-1.5 text-left text-xs hover:bg-gray-700" onClick={() => onDownloadFile(menuItem.id)}>Download</button>
-              <button className="w-full rounded px-2 py-1.5 text-left text-xs hover:bg-gray-700" onClick={() => onRunConsole(menuItem.id)}>Run Console</button>
-              <button className="w-full rounded px-2 py-1.5 text-left text-xs hover:bg-gray-700" onClick={() => onCopy(menuItem.id)}>Copy</button>
-              <button className="w-full rounded px-2 py-1.5 text-left text-xs hover:bg-gray-700" onClick={() => onCut(menuItem.id)}>Move (Cut)</button>
-              <button className="w-full rounded px-2 py-1.5 text-left text-xs text-red-400 hover:bg-gray-700" onClick={() => onDelete(menuItem.id)}>Delete</button>
+              <button className="w-full rounded px-2 py-1.5 text-left text-xs hover:bg-gray-700" onClick={() => runAction(() => onShareToChat(menuItem.id), "Shared to AI chat")}>Share to AI Chat</button>
+              <button className="w-full rounded px-2 py-1.5 text-left text-xs hover:bg-gray-700" onClick={() => runAction(() => onDownloadFile(menuItem.id), "Download started")}>Download</button>
+              <button className="w-full rounded px-2 py-1.5 text-left text-xs hover:bg-gray-700" onClick={() => runAction(() => onRunConsole(menuItem.id), "Sent to console")}>Run Console</button>
+              <button className="w-full rounded px-2 py-1.5 text-left text-xs hover:bg-gray-700" onClick={() => runAction(() => onCopy(menuItem.id), "Copied")}>Copy</button>
+              <button className="w-full rounded px-2 py-1.5 text-left text-xs hover:bg-gray-700" onClick={() => runAction(() => onCut(menuItem.id), "Cut")}>Move (Cut)</button>
+              <button className="w-full rounded px-2 py-1.5 text-left text-xs text-red-400 hover:bg-gray-700" onClick={() => runAction(() => onDelete(menuItem.id), "Deleted")}>Delete</button>
             </>
           )}
           {menuItem.type === "folder" && (
             <>
-              <button className="w-full rounded px-2 py-1.5 text-left text-xs hover:bg-gray-700" onClick={() => onCreateInFolder("file", menuItem.id)}>Create File</button>
-              <button className="w-full rounded px-2 py-1.5 text-left text-xs hover:bg-gray-700" onClick={() => onCreateInFolder("folder", menuItem.id)}>Create Folder</button>
-              <button className="w-full rounded px-2 py-1.5 text-left text-xs hover:bg-gray-700" onClick={() => onImportIntoFolder(menuItem.id, "file")}>Import File</button>
-              <button className="w-full rounded px-2 py-1.5 text-left text-xs hover:bg-gray-700" onClick={() => onImportIntoFolder(menuItem.id, "folder")}>Import Folder</button>
+              <button className="w-full rounded px-2 py-1.5 text-left text-xs hover:bg-gray-700" onClick={() => runAction(() => onCreateInFolder("file", menuItem.id), "File created")}>Create File</button>
+              <button className="w-full rounded px-2 py-1.5 text-left text-xs hover:bg-gray-700" onClick={() => runAction(() => onCreateInFolder("folder", menuItem.id), "Folder created")}>Create Folder</button>
+              <button className="w-full rounded px-2 py-1.5 text-left text-xs hover:bg-gray-700" onClick={() => runAction(() => onImportIntoFolder(menuItem.id, "file"), "Select file to import")}>Import File</button>
+              <button className="w-full rounded px-2 py-1.5 text-left text-xs hover:bg-gray-700" onClick={() => runAction(() => onImportIntoFolder(menuItem.id, "folder"), "Select folder to import")}>Import Folder</button>
               <button className="w-full rounded px-2 py-1.5 text-left text-xs hover:bg-gray-700" onClick={() => { setRenamingItemId(menuItem.id); setRenamingValue(menuItem.name); setContextMenu(null); }}>Rename</button>
-              <button className="w-full rounded px-2 py-1.5 text-left text-xs hover:bg-gray-700" onClick={() => onCopy(menuItem.id)}>Copy</button>
-              <button className="w-full rounded px-2 py-1.5 text-left text-xs hover:bg-gray-700" onClick={() => onCut(menuItem.id)}>Move (Cut)</button>
-              <button className="w-full rounded px-2 py-1.5 text-left text-xs hover:bg-gray-700" onClick={() => onDownloadFolder(menuItem.id)}>Download Folder</button>
+              <button className="w-full rounded px-2 py-1.5 text-left text-xs hover:bg-gray-700" onClick={() => runAction(() => onCopy(menuItem.id), "Copied")}>Copy</button>
+              <button className="w-full rounded px-2 py-1.5 text-left text-xs hover:bg-gray-700" onClick={() => runAction(() => onCut(menuItem.id), "Cut")}>Move (Cut)</button>
+              <button className="w-full rounded px-2 py-1.5 text-left text-xs hover:bg-gray-700" onClick={() => runAction(() => onDownloadFolder(menuItem.id), "Download started")}>Download Folder</button>
               <button
                 className="w-full rounded px-2 py-1.5 text-left text-xs hover:bg-gray-700 disabled:opacity-50"
                 disabled={!clipboard.item}
-                onClick={() => onPasteIntoFolder(menuItem.id)}
+                onClick={() => runAction(() => onPasteIntoFolder(menuItem.id), "Pasted")}
               >
                 Paste
               </button>
-              <button className="w-full rounded px-2 py-1.5 text-left text-xs text-red-400 hover:bg-gray-700" onClick={() => onDelete(menuItem.id)}>Delete</button>
+              <button className="w-full rounded px-2 py-1.5 text-left text-xs text-red-400 hover:bg-gray-700" onClick={() => runAction(() => onDelete(menuItem.id), "Deleted")}>Delete</button>
             </>
           )}
+        </div>
+      )}
+      {actionFeedback && (
+        <div className="fixed bottom-4 left-4 z-[120] rounded border border-emerald-500/40 bg-[#0f172a] px-3 py-1.5 text-xs text-emerald-300 shadow-lg">
+          {actionFeedback}
         </div>
       )}
 

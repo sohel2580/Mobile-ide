@@ -6,8 +6,8 @@
  * explicit branding of "Taskkora" is strictly prohibited.
  */
 
-import React, { RefObject, useEffect, useState, useRef } from "react";
-import { Bot, Plus, User, File, X, ImageIcon, MicOff, Mic, Send, Users, Menu, MessageSquare } from "lucide-react";
+import React, { Dispatch, RefObject, SetStateAction, useEffect, useState, useRef } from "react";
+import { Bot, Plus, User, File, Folder, X, ImageIcon, MicOff, Mic, Send, Users, Menu, MessageSquare } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import Pusher from "pusher-js";
 import { cn } from "@/lib/utils";
@@ -34,7 +34,7 @@ interface ChatSectionProps {
   toggleListening: () => void;
   isListening: boolean;
   input: string;
-  setInput: (input: string) => void;
+  setInput: Dispatch<SetStateAction<string>>;
   createNewChat: () => void;
   setIsSidebarOpen: (isOpen: boolean) => void;
 }
@@ -61,6 +61,26 @@ export const ChatSection = ({
 }: ChatSectionProps) => {
   const [stats, setStats] = useState({ active: 1, total: 1 });
   const clientIdRef = useRef<string>("");
+  const [mentionIndex, setMentionIndex] = useState(0);
+
+  const mentionMatch = input.match(/(?:^|\s)@([^\s@]*)$/);
+  const mentionQuery = mentionMatch ? mentionMatch[1].toLowerCase() : null;
+  const mentionCandidates = mentionQuery !== null
+    ? projectItems
+        .filter((item) => (item.path || item.name).toLowerCase().includes(mentionQuery))
+        .slice(0, 8)
+    : [];
+
+  useEffect(() => {
+    setMentionIndex(0);
+  }, [mentionQuery]);
+
+  const selectMention = (itemId: string) => {
+    const item = projectItems.find((candidate) => candidate.id === itemId);
+    if (!item) return;
+    setReferencedFileIds((prev) => (prev.includes(item.id) ? prev : [...prev, item.id]));
+    setInput((prev) => prev.replace(/@([^\s@]*)$/, `@${item.path || item.name} `));
+  };
 
   // Community Chat State
   const [isCommunityChatOpen, setIsCommunityChatOpen] = useState(false);
@@ -351,7 +371,7 @@ export const ChatSection = ({
               const file = projectItems.find(f => f.id === id);
               return file ? (
                 <div key={id} className="flex items-center gap-1.5 bg-blue-500/10 border border-blue-500/20 px-2 py-1 rounded-md text-[10px] text-blue-400">
-                  <File className="w-3 h-3" />
+                  {file.type === "folder" ? <Folder className="w-3 h-3" /> : <File className="w-3 h-3" />}
                   <span className="truncate max-w-[100px]">{file.name}</span>
                   <button onClick={() => setReferencedFileIds(prev => prev.filter(fid => fid !== id))} className="hover:text-white transition-colors">
                     <X className="w-2.5 h-2.5" />
@@ -409,6 +429,28 @@ export const ChatSection = ({
             }}
             disabled={isLoading}
             onKeyDown={(e) => {
+              if (mentionCandidates.length > 0) {
+                if (e.key === "ArrowDown") {
+                  e.preventDefault();
+                  setMentionIndex((prev) => (prev + 1) % mentionCandidates.length);
+                  return;
+                }
+                if (e.key === "ArrowUp") {
+                  e.preventDefault();
+                  setMentionIndex((prev) => (prev - 1 + mentionCandidates.length) % mentionCandidates.length);
+                  return;
+                }
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  selectMention(mentionCandidates[mentionIndex].id);
+                  return;
+                }
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  setInput((prev) => prev.replace(/@([^\s@]*)$/, ""));
+                  return;
+                }
+              }
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
                 sendMessage(e);
@@ -418,6 +460,24 @@ export const ChatSection = ({
             className="w-full py-3 pl-2 pr-10 text-xs text-gray-200 bg-transparent focus:outline-none resize-none overflow-y-auto max-h-36 leading-relaxed scrollbar-hide"
             placeholder={chatMode === "chat" ? "Ask Kora AI..." : "Describe the image..."}
           />
+          {mentionCandidates.length > 0 && (
+            <div className="absolute bottom-[110%] left-2 right-2 z-20 max-h-48 overflow-y-auto rounded-lg border border-gray-700 bg-[#111827] p-1 shadow-2xl">
+              {mentionCandidates.map((item, index) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={cn(
+                    "flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs",
+                    index === mentionIndex ? "bg-gray-700 text-white" : "text-gray-300 hover:bg-gray-800"
+                  )}
+                  onClick={() => selectMention(item.id)}
+                >
+                  {item.type === "folder" ? <Folder className="w-3.5 h-3.5 text-yellow-400" /> : <File className="w-3.5 h-3.5 text-blue-400" />}
+                  <span className="truncate">{item.path || item.name}</span>
+                </button>
+              ))}
+            </div>
+          )}
           <button type="submit" disabled={isLoading || !input.trim()} className="absolute right-2 p-1.5 bg-yellow-400 text-[#0a233b] rounded-lg hover:bg-yellow-500 transition-all disabled:opacity-30">
             <Send className="w-3.5 h-3.5" />
           </button>

@@ -448,7 +448,11 @@ export default function ChatApp() {
   const shareFileToChat = (id: string) => {
     const file = flatProjectItems.find((item) => item.id === id && item.type === "file");
     if (!file) return;
-    setInput(`I need help with this file:\n${file.content || ""}`);
+    setReferencedFileIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+    setInput((prev) => {
+      const prefix = prev.trim() ? `${prev}\n` : "";
+      return `${prefix}I need help with this file:\n@${file.path}`;
+    });
     if (window.innerWidth < 768) setMobileView("chat");
   };
 
@@ -633,6 +637,9 @@ export default function ChatApp() {
       const referencedFileContext = referencedFileIds.length > 0 
         ? "\n\nUser is specifically referring to these files:\n" + 
           flatProjectItems.filter(item => referencedFileIds.includes(item.id)).map(f => {
+            if (f.type === "folder") {
+              return `--- [FOLDER] ${f.path} ---\nUse this folder as context for related files.`;
+            }
             return `--- ${f.path} ---\n${f.content || "(empty)"}`;
           }).join("\n\n")
         : "";
