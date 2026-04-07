@@ -6,9 +6,9 @@ import clientPromise from "@/lib/mongodb";
 // For production, the user MUST provide these in .env
 const pusher = new Pusher({
   appId: process.env.PUSHER_APP_ID || "local_dummy_app_id",
-  key: process.env.PUSHER_KEY || "local_dummy_key",
+  key: process.env.PUSHER_KEY || process.env.NEXT_PUBLIC_PUSHER_KEY || "local_dummy_key",
   secret: process.env.PUSHER_SECRET || "local_dummy_secret",
-  cluster: process.env.PUSHER_CLUSTER || "ap2",
+  cluster: process.env.PUSHER_CLUSTER || process.env.NEXT_PUBLIC_PUSHER_CLUSTER || "ap2",
   useTLS: true,
 });
 

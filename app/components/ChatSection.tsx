@@ -77,7 +77,7 @@ export const ChatSection = ({
     }
     clientIdRef.current = storedId;
 
-    // Fetch initial messages from MongoDB
+    // Fetch initial messages from MongoDB (to show history on load)
     const fetchMessages = async () => {
       try {
         const res = await fetch("/api/community-chat");
@@ -91,24 +91,7 @@ export const ChatSection = ({
             timestamp: new Date(msg.timestamp || Date.now()),
             isSelf: msg.clientId === clientIdRef.current,
           }));
-          
-          setCommunityMessages((prev) => {
-            // If polling found new messages that aren't ours, show toast
-            if (prev.length > 0 && formattedMessages.length > prev.length) {
-              const newMsgs = formattedMessages.filter((fm: any) => !prev.some((pm: any) => pm.id === fm.id));
-              newMsgs.forEach((msg: any) => {
-                if (!msg.isSelf) {
-                  setIsCommunityChatOpen((currentOpenState) => {
-                    if (!currentOpenState) {
-                      setToastMessage({ content: msg.content, sender: msg.sender });
-                    }
-                    return currentOpenState;
-                  });
-                }
-              });
-            }
-            return formattedMessages;
-          });
+          setCommunityMessages(formattedMessages);
         }
       } catch (error) {
         console.error("Failed to load community messages:", error);
@@ -116,7 +99,7 @@ export const ChatSection = ({
     };
     fetchMessages();
 
-    // Only connect Pusher if keys are configured (we pass them through env vars exposed to client)
+    // Initialize Pusher Client using environment variables
     const pusherKey = process.env.NEXT_PUBLIC_PUSHER_KEY;
     const pusherCluster = process.env.NEXT_PUBLIC_PUSHER_CLUSTER;
 
@@ -137,13 +120,12 @@ export const ChatSection = ({
         };
 
         setCommunityMessages((prev) => {
-          // Double check it's not already there
-          if (prev.some(m => m.id === newMsg.id)) return prev;
+          // Double check it's not already there to prevent duplicates
+          if (prev.some((m) => m.id === newMsg.id)) return prev;
           return [...prev, newMsg];
         });
 
         // Show toast notification if panel is closed
-        // Use a function to check current state value
         setIsCommunityChatOpen((currentOpenState) => {
           if (!currentOpenState) {
             setToastMessage({ content: newMsg.content, sender: newMsg.sender });
@@ -152,44 +134,41 @@ export const ChatSection = ({
         });
       });
 
+      // Cleanup subscription when component unmounts
       return () => {
+        channel.unbind_all();
         pusher.unsubscribe("community-chat");
         pusher.disconnect();
       };
     } else {
-      // Fallback: Poll every 3 seconds if Pusher is not configured
-      const interval = setInterval(fetchMessages, 3000);
-      return () => clearInterval(interval);
+      console.warn("Pusher keys are missing. Real-time chat will not work.");
     }
   }, []);
 
   const handleSendCommunityMessage = async (content: string) => {
-    // 1. Optimistic UI Update
+    // 1. Optimistic UI Update for snappy feel
     const optimisticMsg = {
-      id: Math.random().toString(36).substring(2, 9), // Temp ID
+      id: Math.random().toString(36).substring(2, 9), // Temporary ID
       sender: "You",
       content,
       timestamp: new Date(),
       isSelf: true,
-      clientId: clientIdRef.current, // Used by pusher to ignore self
+      clientId: clientIdRef.current, // Used by Pusher client to ignore self
     };
     setCommunityMessages((prev) => [...prev, optimisticMsg]);
 
-    // 2. Send to Backend
-    try {
-      await fetch("/api/community-chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sender: "User" + clientIdRef.current.substring(0, 3), // Generate a dummy name
-          content,
-          clientId: clientIdRef.current,
-        }),
-      });
-    } catch (error) {
-      console.error("Failed to send message:", error);
-      // Optional: Remove optimistic message on failure or show error
-    }
+    // 2. Send to Backend without awaiting (fire and forget)
+    fetch("/api/pusher/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sender: "User" + clientIdRef.current.substring(0, 3), // Generate a dummy name
+        content,
+        clientId: clientIdRef.current,
+      }),
+    }).catch((error) => {
+      console.error("Failed to send message to Pusher API:", error);
+    });
   };
 
   useEffect(() => {

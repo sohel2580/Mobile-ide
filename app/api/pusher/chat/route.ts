@@ -7,9 +7,9 @@ import clientPromise from "@/lib/mongodb";
 // Vercel / Next.js API routes will read from process.env directly.
 const pusher = new Pusher({
   appId: process.env.PUSHER_APP_ID || "",
-  key: process.env.NEXT_PUBLIC_PUSHER_KEY || "",
+  key: process.env.PUSHER_KEY || process.env.NEXT_PUBLIC_PUSHER_KEY || "",
   secret: process.env.PUSHER_SECRET || "",
-  cluster: process.env.NEXT_PUBLIC_PUSHER_CLUSTER || "ap2", // Default to ap2 if missing
+  cluster: process.env.PUSHER_CLUSTER || process.env.NEXT_PUBLIC_PUSHER_CLUSTER || "ap2", // Default to ap2 if missing
   useTLS: true,
 });
 

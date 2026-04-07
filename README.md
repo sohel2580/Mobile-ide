@@ -56,6 +56,7 @@ Kora AI is built using modern web technologies to provide a native-like IDE expe
 - **📑 Multi-Tab Support**: Open, edit, and navigate through multiple files simultaneously with a sleek Tab Bar and Breadcrumbs.
 - **🎙️ Voice-to-Code**: Speak your commands natively in Bengali or English, and let Kora AI write the code for you.
 - **🎨 Image Generation**: Built-in support for generating images via Stable Diffusion.
+- **💬 Real-Time Community Chat**: Sleek, non-intrusive glowing toast notifications for incoming community messages.
 - **📊 Live Statistics**: Real-time active users and total viewers tracking powered by MongoDB.
 - **📰 News Ticker**: Stay updated with the latest repository commits directly from the editor UI.
 
