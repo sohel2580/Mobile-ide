@@ -6,10 +6,10 @@ import clientPromise from "@/lib/mongodb";
 // Using non-null assertions or fallback to empty strings.
 // Vercel / Next.js API routes will read from process.env directly.
 const pusher = new Pusher({
-  appId: process.env.PUSHER_APP_ID as string,
-  key: process.env.NEXT_PUBLIC_PUSHER_KEY as string,
-  secret: process.env.PUSHER_SECRET as string,
-  cluster: process.env.NEXT_PUBLIC_PUSHER_CLUSTER as string,
+  appId: process.env.PUSHER_APP_ID || "",
+  key: process.env.NEXT_PUBLIC_PUSHER_KEY || "",
+  secret: process.env.PUSHER_SECRET || "",
+  cluster: process.env.NEXT_PUBLIC_PUSHER_CLUSTER || "ap2", // Default to ap2 if missing
   useTLS: true,
 });
 
