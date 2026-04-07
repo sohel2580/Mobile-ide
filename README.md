@@ -75,6 +75,9 @@ Kora AI is built using modern web technologies to provide a native-like IDE expe
 - **🔗 Share to AI with Real Context**: Share action now auto-attaches the selected file as an AI reference instead of only writing plain text in chat input.
 - **@ Mention File/Folder Picker**: Type `@` in chat to search and select files/folders with keyboard support (arrow keys, enter, escape).
 - **✅ Context Menu Action Feedback**: Context menu now auto-closes after action and shows quick feedback for Copy/Cut/Paste/Share/Delete operations.
+- **⚡ Emmet + Snippets in Monaco**: Added Emmet support for HTML/CSS and custom snippet providers for JavaScript, TypeScript, React, and Python.
+- **📸 Code Snapshot Export**: Added VS Code-style code snapshot action to capture selected code as a polished PNG image with syntax highlighting.
+- **🛡️ Snapshot Runtime Stability Fix**: Replaced unsupported `lab`-based capture styles with html2canvas-safe gradient and color values.
 
 ---
 

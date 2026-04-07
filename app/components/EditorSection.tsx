@@ -9,6 +9,9 @@
 import React, { useState, useEffect, useRef } from "react";
 import Editor, { DiffEditor } from "@monaco-editor/react";
 import { File, Bot, Check, X, Undo, ChevronRight } from "lucide-react";
+import { emmetCSS, emmetHTML } from "emmet-monaco-es";
+import html2canvas from "html2canvas";
+import type * as Monaco from "monaco-editor";
 import { cn } from "@/lib/utils";
 import { ProjectItem, PendingEdit } from "../types";
 import { NewsTicker } from "./NewsTicker";
@@ -38,7 +41,186 @@ export const EditorSection = ({
 }: EditorSectionProps) => {
   const [showSuccessMsg, setShowSuccessMsg] = useState(false);
   const [cursorPosition, setCursorPosition] = useState({ line: 1, column: 1 });
-  const diffNavigatorRef = useRef<any>(null);
+  const [isEditorContextMenuOpen, setIsEditorContextMenuOpen] = useState(false);
+  const [contextMenuPosition, setContextMenuPosition] = useState({ x: 0, y: 0 });
+  const [hasSelectedText, setHasSelectedText] = useState(false);
+  const [snapshotHtml, setSnapshotHtml] = useState("");
+  const [isCapturingSnapshot, setIsCapturingSnapshot] = useState(false);
+  const diffNavigatorRef = useRef<{ next: () => void } | null>(null);
+  const editorInstanceRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
+  const monacoInstanceRef = useRef<typeof Monaco | null>(null);
+  const snapshotCardRef = useRef<HTMLDivElement | null>(null);
+  const enhancementInitializedRef = useRef(false);
+  const enhancementDisposersRef = useRef<Array<() => void>>([]);
+
+  useEffect(() => {
+    const closeContextMenu = () => setIsEditorContextMenuOpen(false);
+    window.addEventListener("click", closeContextMenu);
+    return () => window.removeEventListener("click", closeContextMenu);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      enhancementDisposersRef.current.forEach((dispose) => dispose());
+      enhancementDisposersRef.current = [];
+      enhancementInitializedRef.current = false;
+    };
+  }, []);
+
+  const updateSelectionState = () => {
+    const editor = editorInstanceRef.current;
+    if (!editor) {
+      setHasSelectedText(false);
+      return;
+    }
+    const model = editor.getModel();
+    const selection = editor.getSelection();
+    if (!model || !selection) {
+      setHasSelectedText(false);
+      return;
+    }
+    const selectedText = model.getValueInRange(selection).trim();
+    setHasSelectedText(selectedText.length > 0);
+  };
+
+  const captureSelectedCodeSnapshot = async () => {
+    const editor = editorInstanceRef.current;
+    const monaco = monacoInstanceRef.current;
+    if (!editor || !monaco) return;
+
+    const model = editor.getModel();
+    const selection = editor.getSelection();
+    if (!model || !selection) return;
+
+    const selectedText = model.getValueInRange(selection);
+    if (!selectedText.trim()) return;
+
+    const language = model.getLanguageId();
+    const colorizedHtml = await monaco.editor.colorize(selectedText, language, {});
+    setSnapshotHtml(colorizedHtml);
+    setIsCapturingSnapshot(true);
+    setIsEditorContextMenuOpen(false);
+
+    window.requestAnimationFrame(() => {
+      window.setTimeout(async () => {
+        if (!snapshotCardRef.current) {
+          setIsCapturingSnapshot(false);
+          return;
+        }
+
+        const canvas = await html2canvas(snapshotCardRef.current, {
+          backgroundColor: null,
+          scale: 2,
+        });
+        const dataUrl = canvas.toDataURL("image/png");
+        const link = document.createElement("a");
+        link.href = dataUrl;
+        link.download = "KoraGPT-Snippet.png";
+        link.click();
+        setIsCapturingSnapshot(false);
+      }, 80);
+    });
+  };
+
+  const initializeEditorEnhancements = (monaco: typeof Monaco) => {
+    if (enhancementInitializedRef.current) return;
+    enhancementInitializedRef.current = true;
+
+    const emmetHtmlDisposer = emmetHTML(monaco, ["html"]);
+    const emmetCssDisposer = emmetCSS(monaco, ["css", "scss", "less"]);
+    enhancementDisposersRef.current.push(emmetHtmlDisposer, emmetCssDisposer);
+
+    const createSnippetProvider = (
+      language: string,
+      snippets: Array<{ label: string; insertText: string; detail: string }>
+    ) => {
+      const provider = monaco.languages.registerCompletionItemProvider(language, {
+        provideCompletionItems(model, position) {
+          const word = model.getWordUntilPosition(position);
+          const range = {
+            startLineNumber: position.lineNumber,
+            endLineNumber: position.lineNumber,
+            startColumn: word.startColumn,
+            endColumn: word.endColumn,
+          };
+
+          return {
+            suggestions: snippets.map((snippet) => ({
+              label: snippet.label,
+              kind: monaco.languages.CompletionItemKind.Snippet,
+              insertText: snippet.insertText,
+              insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+              documentation: snippet.detail,
+              detail: snippet.detail,
+              range,
+            })),
+          };
+        },
+      });
+
+      enhancementDisposersRef.current.push(() => provider.dispose());
+    };
+
+    const jsTsSnippets = [
+      {
+        label: "clg",
+        detail: "Console log",
+        insertText: "console.log($1);",
+      },
+      {
+        label: "rfc",
+        detail: "React Functional Component",
+        insertText: "export default function ${1:ComponentName}() {\n\treturn (\n\t\t<div>\n\t\t\t$0\n\t\t</div>\n\t);\n}",
+      },
+      {
+        label: "uses",
+        detail: "React useState",
+        insertText: "const [${1:state}, set${1/(.*)/${1:/capitalize}/}] = useState(${2:initialState});",
+      },
+      {
+        label: "imp",
+        detail: "Named import",
+        insertText: "import { $1 } from '$2';",
+      },
+    ];
+
+    const pythonSnippets = [
+      {
+        label: "def",
+        detail: "Python function",
+        insertText: "def ${1:function_name}(${2:args}):\n\t${0:pass}",
+      },
+      {
+        label: "class",
+        detail: "Python class",
+        insertText: "class ${1:ClassName}:\n\tdef __init__(self, ${2:args}):\n\t\t${0:pass}",
+      },
+      {
+        label: "ifmain",
+        detail: "Python main guard",
+        insertText: "if __name__ == \"__main__\":\n\t${0:main()}",
+      },
+    ];
+
+    createSnippetProvider("javascript", jsTsSnippets);
+    createSnippetProvider("typescript", jsTsSnippets);
+    createSnippetProvider("javascriptreact", jsTsSnippets);
+    createSnippetProvider("python", pythonSnippets);
+  };
+
+  const registerSnapshotShortcut = (editor: Monaco.editor.IStandaloneCodeEditor, monaco: typeof Monaco) => {
+    editor.addCommand(
+      monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyMod.Alt | monaco.KeyCode.KeyS,
+      () => {
+        const model = editor.getModel();
+        const selection = editor.getSelection();
+        const text = model && selection ? model.getValueInRange(selection).trim() : "";
+        if (text) {
+          void captureSelectedCodeSnapshot();
+        }
+      }
+    );
+  };
 
   const activePendingEdit = activeFile 
     ? pendingEdits.find(e => e.fileId === activeFile.id && e.status === "pending")
@@ -130,6 +312,40 @@ export const EditorSection = ({
 
       {/* Monaco Editor Area */}
       <div className="flex-1 relative min-h-0">
+        {/* Hidden snapshot card for image capture */}
+        {isCapturingSnapshot && (
+          <div className="fixed -left-[9999px] top-0 z-[-1]">
+            <div
+              ref={snapshotCardRef}
+              className="p-10 rounded-2xl"
+              style={{
+                background: "linear-gradient(135deg, #8b5cf6 0%, #d946ef 50%, #4f46e5 100%)",
+              }}
+            >
+              <div
+                className="w-[900px] rounded-xl shadow-2xl overflow-hidden"
+                style={{
+                  backgroundColor: "#0d1117",
+                  border: "1px solid rgba(255,255,255,0.1)",
+                }}
+              >
+                <div className="h-10 px-4 flex items-center" style={{ backgroundColor: "#161b22" }}>
+                  <div className="flex items-center gap-2">
+                    <span className="w-3 h-3 rounded-full bg-[#ff5f56]" />
+                    <span className="w-3 h-3 rounded-full bg-[#ffbd2e]" />
+                    <span className="w-3 h-3 rounded-full bg-[#27c93f]" />
+                  </div>
+                </div>
+                <div
+                  className="p-6 text-[14px] leading-6 font-mono whitespace-pre-wrap"
+                  style={{ color: "#f3f4f6" }}
+                  dangerouslySetInnerHTML={{ __html: snapshotHtml }}
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Floating Accept/Reject Overlay */}
         {activePendingEdit && (
           <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 bg-[#2d2d2d]/90 backdrop-blur-md border border-blue-500/30 px-4 py-2 rounded-full shadow-2xl animate-in fade-in zoom-in duration-300">
@@ -164,6 +380,7 @@ export const EditorSection = ({
                   theme="vs-dark"
                   language={getMonacoLanguage(activeFile.language)}
                   value={activePendingEdit.newContent}
+                  onMount={(_editor, monaco) => initializeEditorEnhancements(monaco)}
                   options={{
                     fontSize: 14,
                     minimap: { enabled: true },
@@ -184,6 +401,7 @@ export const EditorSection = ({
                   original={activePendingEdit.originalContent}
                   modified={activePendingEdit.newContent}
                   onMount={(editor, monaco) => {
+                    initializeEditorEnhancements(monaco);
                     // Modern Monaco versions handle diff navigation directly via editor commands
                     // or via the DiffEditor API, createDiffNavigator is deprecated/removed in newer versions.
                     
@@ -259,13 +477,30 @@ export const EditorSection = ({
                 fontFamily: 'JetBrains Mono, Fira Code, Consolas, monospace',
               }}
               onMount={(editor, monaco) => {
+                initializeEditorEnhancements(monaco);
+                monacoInstanceRef.current = monaco;
+                editorInstanceRef.current = editor;
+
+                // Disable native context menu and render custom menu for snapshot action.
+                editor.updateOptions({ contextmenu: false });
+
                 editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
                   alert("File saved locally (auto-sync is on)");
                 });
+                registerSnapshotShortcut(editor, monaco);
                 
                 // Track cursor position
                 editor.onDidChangeCursorPosition((e) => {
                   setCursorPosition({ line: e.position.lineNumber, column: e.position.column });
+                });
+                editor.onDidChangeCursorSelection(() => {
+                  updateSelectionState();
+                });
+                editor.onContextMenu((event) => {
+                  event.event.preventDefault();
+                  setContextMenuPosition({ x: event.event.posx, y: event.event.posy });
+                  updateSelectionState();
+                  setIsEditorContextMenuOpen(true);
                 });
               }}
             />
@@ -274,6 +509,29 @@ export const EditorSection = ({
           <div className="h-full flex flex-col items-center justify-center text-gray-600 bg-[#1e1e1e]">
             <Bot className="w-16 h-16 mb-4 opacity-10" />
             <p className="text-sm font-medium">Select a file to edit</p>
+          </div>
+        )}
+
+        {isEditorContextMenuOpen && !activePendingEdit && (
+          <div
+            className="fixed z-[120] w-64 rounded-md border border-gray-700 bg-[#111827] p-1 shadow-2xl"
+            style={{ left: contextMenuPosition.x, top: contextMenuPosition.y }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {hasSelectedText ? (
+              <button
+                type="button"
+                onClick={() => void captureSelectedCodeSnapshot()}
+                className="w-full rounded px-2 py-2 text-left text-xs text-gray-200 hover:bg-gray-700"
+                title="Create image from selected code (Ctrl/Cmd + Alt + Shift + S)"
+              >
+                📸 Screenshot Selected Code
+              </button>
+            ) : (
+              <div className="rounded px-2 py-2 text-xs text-gray-500">
+                Select code to enable screenshot
+              </div>
+            )}
           </div>
         )}
       </div>
