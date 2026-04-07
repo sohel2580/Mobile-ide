@@ -284,9 +284,22 @@ export default function ChatApp() {
   };
 
   const handleRejectEdit = (editId: string) => {
+    const session = sessions.find(s => s.id === currentSessionId);
+    if (!session) return;
+    
+    const edits = session.pendingEdits || [];
+    const edit = edits.find(e => e.id === editId);
+    if (!edit) return;
+
+    // If it was a new file, remove it from the file system
+    if (edit.isNewFile) {
+      setProjectItems(prev => prev.filter(item => item.id !== edit.fileId));
+      setOpenFileIds(prev => prev.filter(id => id !== edit.fileId));
+      if (activeFileId === edit.fileId) setActiveFileId(null);
+    }
+
     setSessions(prev => prev.map(s => {
       if (s.id === currentSessionId) {
-        const edits = s.pendingEdits || [];
         return {
           ...s,
           pendingEdits: edits.map(e => 
@@ -403,231 +416,438 @@ export default function ChatApp() {
         return;
       }
 
-      let content = "";
-      const projectFileContext = projectItems.length > 0 ? "\n\nProject Structure & Files:\n" + projectItems
-          .filter(item => item.type === "file")
-          .map(f => `--- FILE: ${f.path} ---\n${f.content}`)
-          .join("\n\n") : "";
+      // --- STEP 1: Context Injection (File Tree, not full content) ---
+      const generateFileTreeString = (): string => {
+        if (projectItems.length === 0) return "(Empty project)";
+        return projectItems.map(f => `${f.type === "folder" ? "📁" : "📄"} ${f.path}`).join("\n");
+      };
 
-      const referencedFileContext = referencedFileIds.length > 0 ? "\n\nUser is specifically referring to these files:\n" + 
-          projectItems.filter(item => referencedFileIds.includes(item.id)).map(f => f.path).join(", ") : "";
+      const fileTreeContext = `\n\n[PROJECT FILE TREE]\n${generateFileTreeString()}\n[END FILE TREE]`;
 
-      const fullSystemPrompt = projectFileContext + referencedFileContext + "\n\n" + SYSTEM_PROMPT;
+      const referencedFileContext = referencedFileIds.length > 0 
+        ? "\n\nUser is specifically referring to these files:\n" + 
+          projectItems.filter(item => referencedFileIds.includes(item.id)).map(f => {
+            return `--- ${f.path} ---\n${f.content || "(empty)"}`;
+          }).join("\n\n")
+        : "";
 
-      const chatMessages = [
-        { role: "system", content: fullSystemPrompt },
-        ...newMessages.map(msg => ({ role: msg.role, content: msg.content }))
-      ];
+      const fullSystemPrompt = SYSTEM_PROMPT + fileTreeContext + referencedFileContext;
 
-      if (provider === "huggingface") {
-        const hf = new HfInference(token);
-        try {
-          const response = await hf.chatCompletion({
-            model: modelId,
-            messages: chatMessages,
-            max_tokens: maxTokensState,
-            temperature: temperature,
-          });
-          content = response.choices[0].message.content || "";
-        } catch (chatError: any) {
-          const prompt = fullSystemPrompt + "\n" + newMessages.map(msg => `${msg.role}: ${msg.content}`).join("\n") + "\nassistant: ";
-          const response = await hf.textGeneration({
-            model: modelId,
-            inputs: prompt,
-            parameters: {
-              max_new_tokens: maxTokensState,
+      // --- STEP 2 & 3: Agent Loop ---
+      let loopMessages = [...newMessages];
+      const MAX_AGENT_TURNS = 6;
+      let agentTurn = 0;
+      let finalParsedMessages: Message[] = [];
+      let finalEdits: PendingEdit[] = [];
+      let newProjectFiles: ProjectItem[] = [];
+      const affectedFileIds: string[] = [];
+
+      agentLoop:
+      while (agentTurn < MAX_AGENT_TURNS) {
+        agentTurn++;
+        let content = "";
+
+        const chatMessages = [
+          { role: "system", content: fullSystemPrompt },
+          ...loopMessages.map(msg => ({ role: msg.role, content: msg.content }))
+        ];
+
+        // --- Call the LLM (all providers) ---
+        if (provider === "huggingface") {
+          const hf = new HfInference(token);
+          try {
+            const response = await hf.chatCompletion({
+              model: modelId,
+              messages: chatMessages,
+              max_tokens: maxTokensState,
               temperature: temperature,
-              stop: ["user:", "\nuser"],
-              // @ts-ignore
-              wait_for_model: true,
+            });
+            content = response.choices[0].message.content || "";
+          } catch (chatError: any) {
+            const prompt = fullSystemPrompt + "\n" + loopMessages.map(msg => `${msg.role}: ${msg.content}`).join("\n") + "\nassistant: ";
+            const response = await hf.textGeneration({
+              model: modelId,
+              inputs: prompt,
+              parameters: {
+                max_new_tokens: maxTokensState,
+                temperature: temperature,
+                stop: ["user:", "\nuser"],
+                // @ts-ignore
+                wait_for_model: true,
+              },
+            });
+            content = response.generated_text.split("assistant:").pop()?.trim() || response.generated_text;
+          }
+        } else if (provider === "openai" || provider === "custom" || provider === "glm" || provider === "agent_router") {
+          let apiUrl = "https://api.openai.com/v1/chat/completions";
+          if (provider === "custom" && baseUrl) apiUrl = `${baseUrl.replace(/\/$/, '')}/chat/completions`;
+          if (provider === "glm") apiUrl = baseUrl ? `${baseUrl.replace(/\/$/, '')}/chat/completions` : "https://open.bigmodel.cn/api/paas/v4/chat/completions";
+          const sanitizedModelId = modelId.trim();
+
+          if (provider === "agent_router") {
+            apiUrl = "/api/proxy"; // Route through Next.js backend proxy
+            
+            const response = await fetch(apiUrl, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify({
+                targetUrl: "https://agentrouter.org/v1/chat/completions",
+                method: "POST",
+                headers: {
+                  "Authorization": `Bearer ${token}`,
+                  "HTTP-Referer": "https://koragpt.vercel.app", // Required for some proxy/router services
+                  "X-Title": "KoraGPT IDE"
+                },
+                body: {
+                  model: sanitizedModelId,
+                  messages: chatMessages,
+                  max_tokens: maxTokensState,
+                  temperature: temperature
+                }
+              })
+            });
+            const data = await response.json();
+            if (data.error) throw new Error(data.error.message || "Agent Router API Error: " + JSON.stringify(data.error));
+            if (!data.choices || !data.choices[0]) throw new Error("Invalid response from Agent Router: " + JSON.stringify(data));
+            content = data.choices[0].message.content;
+          } else {
+            const response = await fetch(apiUrl, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${token}`
+              },
+              body: JSON.stringify({
+                model: sanitizedModelId,
+                messages: chatMessages,
+                max_tokens: maxTokensState,
+                temperature: temperature,
+              })
+            });
+            const data = await response.json();
+            if (data.error) throw new Error(data.error.message || "API Error");
+            content = data.choices[0].message.content;
+          }
+        } else if (provider === "anthropic") {
+          const response = await fetch("https://api.anthropic.com/v1/messages", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-api-key": token,
+              "anthropic-version": "2023-06-01",
+              "anthropic-dangerously-allow-browser": "true"
             },
-          });
-          content = response.generated_text.split("assistant:").pop()?.trim() || response.generated_text;
-        }
-      } else if (provider === "openai" || provider === "custom" || provider === "glm") {
-        let apiUrl = "https://api.openai.com/v1/chat/completions";
-        if (provider === "custom" && baseUrl) apiUrl = `${baseUrl.replace(/\/$/, '')}/chat/completions`;
-        if (provider === "glm") apiUrl = baseUrl ? `${baseUrl.replace(/\/$/, '')}/chat/completions` : "https://open.bigmodel.cn/api/paas/v4/chat/completions";
-        
-        // Sanitize model name for OpenAI compatible endpoints if needed (remove spaces)
-        const sanitizedModelId = modelId.replace(/\s+/g, "-");
-
-        const response = await fetch(apiUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${token}`
-          },
-          body: JSON.stringify({
-            model: sanitizedModelId,
-            messages: chatMessages,
-            max_tokens: maxTokensState,
-            temperature: temperature,
-          })
-        });
-        const data = await response.json();
-        if (data.error) throw new Error(data.error.message || "API Error");
-        content = data.choices[0].message.content;
-      } else if (provider === "anthropic") {
-        const response = await fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-api-key": token,
-            "anthropic-version": "2023-06-01",
-            "anthropic-dangerously-allow-browser": "true"
-          },
-          body: JSON.stringify({
-            model: modelId,
-            max_tokens: maxTokensState,
-            temperature: temperature,
-            system: fullSystemPrompt,
-            messages: newMessages.map(msg => ({ role: msg.role === "user" ? "user" : "assistant", content: msg.content }))
-          })
-        });
-        const data = await response.json();
-        if (data.error) throw new Error(data.error.message || "Anthropic API Error");
-        content = data.content[0].text;
-      } else if (provider === "gemini") {
-        // Sanitize model name for Gemini
-        const sanitizedModelId = modelId.toLowerCase().replace(/[^a-z0-9-.]/g, "-");
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${sanitizedModelId}:generateContent?key=${token}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents: newMessages.map(msg => ({
-              role: msg.role === "user" ? "user" : "model",
-              parts: [{ text: msg.content }]
-            })),
-            systemInstruction: { parts: [{ text: fullSystemPrompt }] },
-            generationConfig: {
+            body: JSON.stringify({
+              model: modelId,
+              max_tokens: maxTokensState,
               temperature: temperature,
-              maxOutputTokens: maxTokensState,
-            }
-          })
-        });
-        const data = await response.json();
-        if (data.error) throw new Error(data.error.message || "Gemini API Error");
-        content = data.candidates[0].content.parts[0].text;
-      } else if (provider === "ollama") {
-        const apiUrl = baseUrl ? `${baseUrl.replace(/\/$/, '')}/api/chat` : "http://localhost:11434/api/chat";
-        
-        try {
-          const response = await fetch(apiUrl, {
+              system: fullSystemPrompt,
+              messages: loopMessages.map(msg => ({ role: msg.role === "user" ? "user" : "assistant", content: msg.content }))
+            })
+          });
+          const data = await response.json();
+          if (data.error) throw new Error(data.error.message || "Anthropic API Error");
+          content = data.content[0].text;
+        } else if (provider === "gemini") {
+          const sanitizedModelId = modelId.toLowerCase().replace(/[^a-z0-9-.]/g, "-");
+          const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${sanitizedModelId}:generateContent?key=${token}`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              model: modelId,
-              messages: chatMessages,
-              stream: false,
-              options: {
+              contents: loopMessages.map(msg => ({
+                role: msg.role === "user" ? "user" : "model",
+                parts: [{ text: msg.content }]
+              })),
+              systemInstruction: { parts: [{ text: fullSystemPrompt }] },
+              generationConfig: {
                 temperature: temperature,
-                num_predict: maxTokensState
+                maxOutputTokens: maxTokensState,
               }
             })
           });
           const data = await response.json();
-          if (data.error) throw new Error(data.error || "Ollama API Error");
-          content = data.message?.content || "";
-        } catch (error) {
-          console.error("Local Ollama Error:", error);
-          alert("Failed to connect to Ollama. Please set OLLAMA_ORIGINS='https://koragpt.vercel.app' on your PC and restart Ollama.");
-          throw error;
-        }
-      }
-
-      if (!content) throw new Error("No response received from the model.");
-
-      const cleanContent = content.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
-      
-      // 1. Smart detection (fallback): If AI forgets specific format but provides file name and code block
-      let processedContent = cleanContent;
-      const markdownCodeRegex = /([a-zA-Z0-9_.-]+)\s*[:\-]?\s*[\s\S]*?```(?:\w+)?\n([\s\S]*?)```/g;
-      let mdMatch;
-      while ((mdMatch = markdownCodeRegex.exec(cleanContent)) !== null) {
-        const fileName = mdMatch[1].trim();
-        const codeContent = mdMatch[2].trim();
-        const fileExists = projectItems.find(f => f.name === fileName || f.path === fileName);
-        
-        // If file exists in project and not already in EDIT_START format
-        if (fileExists && !cleanContent.includes(`<<<<EDIT_START: ${fileName}>>>>`)) {
-          const fakeEditBlock = `<<<<EDIT_START: ${fileExists.path}>>>>\n${codeContent}\n<<<<EDIT_END>>>>`;
-          // Replace in content (Warning: This is a simple replacement)
-          processedContent = processedContent.replace(mdMatch[0], fakeEditBlock);
-        }
-      }
-
-      // 2. Parse edit block (more flexible regex)
-      const editRegex = /<<<<EDIT_START:?\s*(.*?)\s*>>>>([\s\S]*?)<<<<EDIT_END>>>>/gi;
-      let match;
-      const parsedMessages: Message[] = [];
-      let lastIndex = 0;
-      const newEdits: PendingEdit[] = [];
-      const newProjectFiles: ProjectItem[] = [];
-
-      while ((match = editRegex.exec(processedContent)) !== null) {
-        const textBefore = processedContent.substring(lastIndex, match.index).trim();
-        if (textBefore) parsedMessages.push({ role: "assistant", content: textBefore });
-
-        const filePath = match[1].trim();
-        const newFileContent = match[2].trim();
-        let file = projectItems.find(item => item.path === filePath || item.name === filePath);
-
-        // If file doesn't exist, create it
-        if (!file) {
-          const extension = filePath.split('.').pop() || 'txt';
-          file = {
-            id: Math.random().toString(36).substr(2, 9),
-            name: filePath.split('/').pop() || filePath,
-            type: "file",
-            path: filePath,
-            content: "", // Empty initial content, newContent will be in pending edit
-            language: extension,
-            isOpen: true
-          };
-          newProjectFiles.push(file);
+          if (data.error) throw new Error(data.error.message || "Gemini API Error");
+          content = data.candidates[0].content.parts[0].text;
+        } else if (provider === "ollama") {
+          const apiUrl = baseUrl ? `${baseUrl.replace(/\/$/, '')}/api/chat` : "http://localhost:11434/api/chat";
+          
+          try {
+            const response = await fetch(apiUrl, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                model: modelId,
+                messages: chatMessages,
+                stream: false,
+                options: {
+                  temperature: temperature,
+                  num_predict: maxTokensState
+                }
+              })
+            });
+            const data = await response.json();
+            if (data.error) throw new Error(data.error || "Ollama API Error");
+            content = data.message?.content || "";
+          } catch (error) {
+            console.error("Local Ollama Error:", error);
+            alert("Failed to connect to Ollama. Please set OLLAMA_ORIGINS='https://koragpt.vercel.app' on your PC and restart Ollama.");
+            throw error;
+          }
         }
 
-        if (file) {
+        if (!content) throw new Error("No response received from the model.");
+
+        const cleanContent = content.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+
+        // --- AGENT TOOL: <kora-read> (File Reading) ---
+        const readRegex = /<kora-read\s+file="([^"]+)"\s*>\s*<\/kora-read>/g;
+        let readMatch;
+        const readRequests: { fileName: string }[] = [];
+        while ((readMatch = readRegex.exec(cleanContent)) !== null) {
+          readRequests.push({ fileName: readMatch[1].trim() });
+        }
+
+        if (readRequests.length > 0) {
+          // Build tool response and auto-loop
+          let toolResponse = "";
+          const readActionMessages: Message[] = [];
+
+          for (const req of readRequests) {
+            const file = projectItems.find(f => f.path === req.fileName || f.name === req.fileName);
+            if (file && file.content !== undefined) {
+              toolResponse += `\n[FILE: ${file.path}]\n${file.content}\n[END FILE: ${file.path}]\n`;
+              readActionMessages.push({
+                role: "assistant",
+                content: "",
+                type: "file-action",
+                fileAction: {
+                  fileName: file.path,
+                  linesAdded: 0,
+                  linesRemoved: 0,
+                  action: "reading"
+                }
+              });
+            } else {
+              toolResponse += `\n[ERROR: File "${req.fileName}" not found in project.]\n`;
+            }
+          }
+
+          // Show file-action cards in the chat UI
+          if (readActionMessages.length > 0) {
+            setSessions(prev => prev.map(s => {
+              if (s.id === currentSessionId) {
+                return { ...s, messages: [...s.messages, ...readActionMessages] };
+              }
+              return s;
+            }));
+          }
+
+          // Append AI's response and tool result to loop context (hidden from user)
+          loopMessages.push({ role: "assistant", content: cleanContent });
+          loopMessages.push({ role: "user", content: `[SYSTEM TOOL RESULT]\n${toolResponse}\nNow continue your task. Use kora-edit or kora-file to make changes, or provide your answer.` });
+
+          continue agentLoop; // Re-call the LLM with file content
+        }
+
+        // --- At this point, AI is done reading and is providing its final answer ---
+        let processedContent = cleanContent;
+
+        // Fallback: Smart detection if AI forgets format but provides filename + code block
+        const markdownCodeRegex = /([a-zA-Z0-9_.-]+)\s*[:\-]?\s*[\s\S]*?```(?:\w+)?\n([\s\S]*?)```/g;
+        let mdMatch;
+        while ((mdMatch = markdownCodeRegex.exec(cleanContent)) !== null) {
+          const fileName = mdMatch[1].trim();
+          const codeContent = mdMatch[2].trim();
+          const fileExists = projectItems.find(f => f.name === fileName || f.path === fileName);
+          
+          if (fileExists && !cleanContent.includes(`<<<<EDIT_START: ${fileName}>>>>`)) {
+            const fakeEditBlock = `<<<<EDIT_START: ${fileExists.path}>>>>\n${codeContent}\n<<<<EDIT_END>>>>`;
+            processedContent = processedContent.replace(mdMatch[0], fakeEditBlock);
+          }
+        }
+
+        // --- AGENT TOOL: <kora-edit> (Smart Diff Update) ---
+        const koraEditRegex = /<kora-edit\s+file="([^"]+)">\s*<find>([\s\S]*?)<\/find>\s*<replace>([\s\S]*?)<\/replace>\s*<\/kora-edit>/g;
+        let koraEditMatch;
+        while ((koraEditMatch = koraEditRegex.exec(processedContent)) !== null) {
+          const editFileName = koraEditMatch[1].trim();
+          const findStr = koraEditMatch[2].trim();
+          const replaceStr = koraEditMatch[3].trim();
+
+          const fileToEdit = projectItems.find(f => f.path === editFileName || f.name === editFileName);
+          if (fileToEdit && fileToEdit.content !== undefined) {
+            if (fileToEdit.content.includes(findStr)) {
+              const updatedContent = fileToEdit.content.replace(findStr, replaceStr);
+              
+              const editId = Math.random().toString(36).substr(2, 9);
+              finalEdits.push({
+                id: editId,
+                fileId: fileToEdit.id,
+                originalContent: fileToEdit.content,
+                newContent: updatedContent,
+                status: "pending",
+                isNewFile: false
+              });
+
+              affectedFileIds.push(fileToEdit.id);
+              
+              finalParsedMessages.push({
+                role: "assistant",
+                content: `Suggested edit for ${fileToEdit.path}`,
+                type: "diff",
+                editId: editId
+              });
+            }
+          }
+          // Replace the raw XML with a clean badge
+          processedContent = processedContent.replace(koraEditMatch[0], `\n\n**✏️ Edit Suggested:** \`${editFileName}\`\n\n`);
+        }
+
+        // --- <kora-file> (New File Creation or Smart Diff Update) ---
+        processedContent = processedContent.replace(/<kora-file name="([^"]+)">([\s\S]*?)<\/kora-file>/g, (_fullMatch, fileName, codeContent) => {
+          fileName = fileName.trim();
+          codeContent = codeContent.trim();
+          
+          let existingFile = projectItems.find(item => item.path === fileName || item.name === fileName);
+          
+          if (existingFile) {
+            const editId = Math.random().toString(36).substr(2, 9);
+            finalEdits.push({
+              id: editId,
+              fileId: existingFile.id,
+              originalContent: existingFile.content || "",
+              newContent: codeContent,
+              status: "pending",
+              isNewFile: false
+            });
+            
+            affectedFileIds.push(existingFile.id);
+            
+            finalParsedMessages.push({
+              role: "assistant",
+              content: `Suggested update for ${existingFile.path}`,
+              type: "diff",
+              editId: editId
+            });
+            
+            return `\n\n**🔄 Update Suggested:** \`${fileName}\`\n\n`;
+          } else {
+            const extension = fileName.split('.').pop() || 'txt';
+            const newFile: ProjectItem = {
+              id: Math.random().toString(36).substr(2, 9),
+              name: fileName.split('/').pop() || fileName,
+              type: "file",
+              path: fileName,
+              content: "", // Start with empty content, show new content in PendingEdit
+              language: extension,
+              isOpen: true
+            };
+            newProjectFiles.push(newFile);
+            affectedFileIds.push(newFile.id);
+
+            const editId = Math.random().toString(36).substr(2, 9);
+            finalEdits.push({
+              id: editId,
+              fileId: newFile.id,
+              originalContent: "",
+              newContent: codeContent,
+              status: "pending",
+              isNewFile: true
+            });
+
+            finalParsedMessages.push({
+              role: "assistant",
+              content: `New file created: ${newFile.path}`,
+              type: "diff",
+              editId: editId
+            });
+            
+            return `\n\n**✨ New File Created:** \`${fileName}\`\n\n`;
+          }
+        });
+
+        // --- <<<<EDIT_START>>>> (Full File Rewrite) ---
+        const editRegex = /<<<<EDIT_START:?\s*(.*?)\s*>>>>([\s\S]*?)<<<<EDIT_END>>>>/gi;
+        let match;
+        let lastIndex = 0;
+
+        while ((match = editRegex.exec(processedContent)) !== null) {
+          const textBefore = processedContent.substring(lastIndex, match.index).trim();
+          if (textBefore) finalParsedMessages.push({ role: "assistant", content: textBefore });
+
+          const filePath = match[1].trim();
+          const newFileContent = match[2].trim();
+          let file = projectItems.find(item => item.path === filePath || item.name === filePath) ||
+                     newProjectFiles.find(item => item.path === filePath || item.name === filePath);
+
+          if (!file) {
+            const extension = filePath.split('.').pop() || 'txt';
+            file = {
+              id: Math.random().toString(36).substr(2, 9),
+              name: filePath.split('/').pop() || filePath,
+              type: "file",
+              path: filePath,
+              content: "",
+              language: extension,
+              isOpen: true
+            };
+            newProjectFiles.push(file);
+          }
+
           const editId = Math.random().toString(36).substr(2, 9);
-          newEdits.push({
+          finalEdits.push({
             id: editId,
             fileId: file.id,
             originalContent: file.content || "",
             newContent: newFileContent,
-            status: "pending"
+            status: "pending",
+            isNewFile: file.content === "" || file.content === undefined
           });
-          parsedMessages.push({ 
+          
+          finalParsedMessages.push({ 
             role: "assistant", 
             content: `Suggested edit for ${file.path}`,
             type: "diff",
             editId: editId
           });
-          setActiveFileId(file.id);
           
-          // Add to open files if not already open
-          if (!openFileIds.includes(file.id)) {
-            setOpenFileIds(prev => [...prev, file!.id]);
-          }
+          affectedFileIds.push(file.id);
+          lastIndex = editRegex.lastIndex;
         }
-        lastIndex = editRegex.lastIndex;
-      }
 
-      if (newProjectFiles.length > 0) {
-        setProjectItems(prev => [...prev, ...newProjectFiles]);
-      }
+        // Apply all state updates at once
+        if (newProjectFiles.length > 0) {
+          setProjectItems(prev => [...prev, ...newProjectFiles]);
+        }
+        
+        if (affectedFileIds.length > 0) {
+          setOpenFileIds(prev => {
+            const newOpenIds = [...prev];
+            affectedFileIds.forEach(id => {
+              if (!newOpenIds.includes(id)) newOpenIds.push(id);
+            });
+            return newOpenIds;
+          });
+          setActiveFileId(affectedFileIds[affectedFileIds.length - 1]);
+        }
 
-      const remainingText = processedContent.substring(lastIndex).trim();
-      if (remainingText || parsedMessages.length === 0) {
-        parsedMessages.push({ role: "assistant", content: remainingText || processedContent, isTyping: true });
-      }
+        const remainingText = processedContent.substring(lastIndex).trim();
+        if (remainingText && !finalParsedMessages.some(m => m.content === remainingText)) {
+          finalParsedMessages.push({ role: "assistant", content: remainingText, isTyping: true });
+        }
+
+        // Final response reached — break out of the agent loop
+        break agentLoop;
+      } // end agentLoop
 
       setSessions(prev => prev.map(s => {
         if (s.id === currentSessionId) {
           return {
             ...s,
-            messages: [...s.messages, ...parsedMessages],
-            pendingEdits: [...(s.pendingEdits || []), ...newEdits]
+            messages: [...s.messages, ...finalParsedMessages],
+            pendingEdits: [...(s.pendingEdits || []), ...finalEdits]
           };
         }
         return s;

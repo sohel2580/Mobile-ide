@@ -6,7 +6,7 @@
  * explicit branding of "Taskkora" is strictly prohibited.
  */
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Editor, { DiffEditor } from "@monaco-editor/react";
 import { File, Bot, Check, X, Undo, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -38,6 +38,7 @@ export const EditorSection = ({
 }: EditorSectionProps) => {
   const [showSuccessMsg, setShowSuccessMsg] = useState(false);
   const [cursorPosition, setCursorPosition] = useState({ line: 1, column: 1 });
+  const diffNavigatorRef = useRef<any>(null);
 
   const activePendingEdit = activeFile 
     ? pendingEdits.find(e => e.fileId === activeFile.id && e.status === "pending")
@@ -123,49 +124,120 @@ export const EditorSection = ({
         </div>
         
         <div className="flex items-center gap-4 flex-shrink-0">
-          {activePendingEdit && (
-            <div className="flex items-center gap-2">
-              <button 
-                onClick={() => handleRejectEdit(activePendingEdit.id)}
-                className="flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-medium bg-gray-800 text-gray-300 hover:bg-gray-700 hover:text-white rounded border border-gray-700 transition-all"
-              >
-                <Undo className="w-3 h-3" />
-                Undo
-              </button>
-              <button 
-                onClick={handleAccept}
-                className="flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-medium bg-blue-600 text-white hover:bg-blue-500 rounded transition-all"
-              >
-                Keep
-                <Check className="w-3 h-3 ml-0.5" />
-              </button>
-            </div>
-          )}
+          {/* Action buttons removed in favor of floating overlay */}
         </div>
       </div>
 
       {/* Monaco Editor Area */}
       <div className="flex-1 relative min-h-0">
+        {/* Floating Accept/Reject Overlay */}
+        {activePendingEdit && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 bg-[#2d2d2d]/90 backdrop-blur-md border border-blue-500/30 px-4 py-2 rounded-full shadow-2xl animate-in fade-in zoom-in duration-300">
+            <div className="flex items-center gap-2 mr-2 pr-3 border-r border-gray-700">
+              <Bot className="w-4 h-4 text-blue-400" />
+              <span className="text-[11px] font-semibold text-gray-200 uppercase tracking-wider">AI Suggestion</span>
+            </div>
+            <button 
+              onClick={() => handleRejectEdit(activePendingEdit.id)}
+              className="flex items-center gap-1.5 px-3 py-1 text-[11px] font-medium bg-red-500/10 text-red-400 hover:bg-red-500/20 rounded-full border border-red-500/20 transition-all"
+            >
+              <X className="w-3.5 h-3.5" />
+              Reject
+            </button>
+            <button 
+              onClick={handleAccept}
+              className="flex items-center gap-1.5 px-4 py-1 text-[11px] font-bold bg-blue-600 text-white hover:bg-blue-500 rounded-full shadow-lg shadow-blue-600/20 transition-all"
+            >
+              <Check className="w-3.5 h-3.5" />
+              Accept
+            </button>
+          </div>
+        )}
+
         {activeFile ? (
           activePendingEdit ? (
-            <DiffEditor
-              height="100%"
-              theme="vs-dark"
-              language={getMonacoLanguage(activeFile.language)}
-              original={activePendingEdit.originalContent}
-              modified={activePendingEdit.newContent}
-              options={{
-                fontSize: 14,
-                minimap: { enabled: true },
-                scrollBeyondLastLine: false,
-                automaticLayout: true,
-                padding: { top: 20 },
-                renderSideBySide: true,
-                readOnly: true,
-                originalEditable: false,
-                fontFamily: 'JetBrains Mono, Fira Code, Consolas, monospace',
-              }}
-            />
+            activePendingEdit.isNewFile ? (
+              /* For new files, show a regular editor with the new content, but keep the overlay */
+              <div className="h-full relative">
+                <Editor
+                  height="100%"
+                  theme="vs-dark"
+                  language={getMonacoLanguage(activeFile.language)}
+                  value={activePendingEdit.newContent}
+                  options={{
+                    fontSize: 14,
+                    minimap: { enabled: true },
+                    scrollBeyondLastLine: false,
+                    automaticLayout: true,
+                    padding: { top: 20 },
+                    readOnly: true,
+                    fontFamily: 'JetBrains Mono, Fira Code, Consolas, monospace',
+                  }}
+                />
+              </div>
+            ) : (
+              <div className="h-full relative group">
+                <DiffEditor
+                  height="100%"
+                  theme="vs-dark"
+                  language={getMonacoLanguage(activeFile.language)}
+                  original={activePendingEdit.originalContent}
+                  modified={activePendingEdit.newContent}
+                  onMount={(editor, monaco) => {
+                    // Modern Monaco versions handle diff navigation directly via editor commands
+                    // or via the DiffEditor API, createDiffNavigator is deprecated/removed in newer versions.
+                    
+                    // We can implement a simple "next change" logic manually using the editor's line changes
+                    const navigateToNextChange = () => {
+                      const changes = editor.getLineChanges();
+                      if (!changes || changes.length === 0) return;
+                      
+                      const modifiedEditor = editor.getModifiedEditor();
+                      const currentPosition = modifiedEditor.getPosition();
+                      if (!currentPosition) return;
+
+                      // Find the first change that comes after the current cursor position
+                      let nextChange = changes.find(change => change.modifiedStartLineNumber > currentPosition.lineNumber);
+                      
+                      // If no change is after current position, wrap around to the first change
+                      if (!nextChange) {
+                        nextChange = changes[0];
+                      }
+
+                      modifiedEditor.setPosition({ lineNumber: nextChange.modifiedStartLineNumber, column: 1 });
+                      modifiedEditor.revealLineInCenter(nextChange.modifiedStartLineNumber);
+                    };
+
+                    diffNavigatorRef.current = { next: navigateToNextChange };
+                    
+                    // Add shortcut to navigate diffs
+                    editor.getModifiedEditor().addCommand(monaco.KeyMod.Alt | monaco.KeyCode.F5, navigateToNextChange);
+                    editor.getOriginalEditor().addCommand(monaco.KeyMod.Alt | monaco.KeyCode.F5, navigateToNextChange);
+                  }}
+                  options={{
+                    fontSize: 14,
+                    minimap: { enabled: true },
+                    scrollBeyondLastLine: false,
+                    automaticLayout: true,
+                    padding: { top: 20 },
+                    renderSideBySide: true,
+                    readOnly: true,
+                    originalEditable: false,
+                    fontFamily: 'JetBrains Mono, Fira Code, Consolas, monospace',
+                    useInlineViewWhenSpaceIsLimited: false,
+                  }}
+                />
+                <div className="absolute bottom-4 right-4 z-10 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button 
+                    onClick={() => diffNavigatorRef.current?.next()}
+                    className="bg-[#2d2d2d] border border-gray-700 p-1.5 rounded hover:bg-gray-700 text-gray-400 hover:text-white transition-all shadow-xl"
+                    title="Next Change (Alt+F5)"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            )
           ) : (
             <Editor
               height="100%"

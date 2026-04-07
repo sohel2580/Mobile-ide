@@ -14,6 +14,13 @@ export const NewsTicker = () => {
       try {
         const response = await fetch("https://api.github.com/repos/alornishan014/KoraGPT_IDE/commits?per_page=5");
         if (!response.ok) {
+          if (response.status === 403 || response.status === 429) {
+            // Handle rate limit gracefully
+            console.warn("GitHub API rate limit exceeded. Using fallback messages.");
+            setCommits("✨ Initializing KoraGPT  •  ✨ Setting up Advanced Automated File Management  •  ✨ Optimizing Editor Section  •  ✨ Connecting to MongoDB for Persistent Stats  •  ✨ Ready for action!");
+            setIsLoading(false);
+            return;
+          }
           throw new Error("Failed to fetch commits");
         }
         const data = await response.json();

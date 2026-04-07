@@ -223,7 +223,13 @@ export const Sidebar = ({
                 <label className="text-[10px] text-gray-400 ml-1">API Provider</label>
                 <select
                   value={provider}
-                  onChange={(e) => setProvider(e.target.value)}
+                  onChange={(e) => {
+                    const newProvider = e.target.value;
+                    setProvider(newProvider);
+                    if (newProvider === "agent_router") {
+                      setBaseUrl("https://agentrouter.org/v1");
+                    }
+                  }}
                   className="w-full p-2.5 text-xs rounded-xl bg-gray-800/50 border border-gray-700 text-white focus:outline-none focus:ring-2 focus:ring-yellow-400/20 focus:border-yellow-400 transition-all"
                 >
                   <option value="huggingface">Hugging Face</option>
@@ -233,6 +239,7 @@ export const Sidebar = ({
                   <option value="glm">GLM (ZhipuAI)</option>
                   <option value="ollama">Ollama (Local)</option>
                   <option value="custom">Custom (OpenAI Compatible)</option>
+                  <option value="agent_router">Agent Router</option>
                 </select>
               </div>
               
@@ -288,6 +295,7 @@ export const Sidebar = ({
                       provider === "gemini" ? "gemini-1.5-pro" :
                       provider === "glm" ? "glm-4" :
                       provider === "ollama" ? "llama3" :
+                      provider === "agent_router" ? "gpt-4o or claude-3-5-sonnet-20241022" :
                       "model-name"
                     }
                   />
@@ -310,6 +318,7 @@ export const Sidebar = ({
                   />
                 </div>
               )}
+
 
               <button
                 onClick={saveSettings}

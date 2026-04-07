@@ -14,15 +14,22 @@ export interface PendingEdit {
   originalContent: string;
   newContent: string;
   status: "pending" | "accepted" | "rejected";
+  isNewFile?: boolean;
 }
 
 export interface Message {
   role: "user" | "assistant" | "system";
   content: string;
   isTyping?: boolean;
-  type?: "text" | "image" | "diff";
+  type?: "text" | "image" | "diff" | "file-action";
   imageUrl?: string;
   editId?: string; // Link to PendingEdit
+  fileAction?: {
+    fileName: string;
+    linesAdded: number;
+    linesRemoved: number;
+    action: "created" | "edited" | "reading";
+  };
 }
 
 export interface ChatSession {

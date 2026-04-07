@@ -16,8 +16,17 @@
     <a href="https://github.com/alornishan014/KoraGPT_IDE/blob/master/LICENSE">
       <img src="https://img.shields.io/badge/License-AGPL%20v3-blue.svg" alt="License" />
     </a>
+    <a href="https://github.com/alornishan014/KoraGPT_IDE/stargazers">
+      <img src="https://img.shields.io/github/stars/alornishan014/KoraGPT_IDE?style=flat-square&color=yellow" alt="Stars" />
+    </a>
+    <a href="https://github.com/alornishan014/KoraGPT_IDE/network/members">
+      <img src="https://img.shields.io/github/forks/alornishan014/KoraGPT_IDE?style=flat-square&color=lightgray" alt="Forks" />
+    </a>
     <a href="https://github.com/alornishan014/KoraGPT_IDE/pulls">
       <img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square" alt="PRs Welcome" />
+    </a>
+    <a href="https://github.com/alornishan014/KoraGPT_IDE/deployments">
+      <img src="https://img.shields.io/badge/Deployments-10-success?style=flat-square" alt="Deployments" />
     </a>
     <img src="https://img.shields.io/badge/Next.js-16.2-black?logo=next.js" alt="Next.js" />
     <img src="https://img.shields.io/badge/TypeScript-5.0-blue?logo=typescript" alt="TypeScript" />
@@ -41,11 +50,14 @@ Kora AI is built using modern web technologies to provide a native-like IDE expe
 ### ✨ Current Key Features
 
 - **🤖 Deep AI Integration**: Chat directly with your codebase. The AI can read multiple files, understand context, and suggest precise code modifications.
-- **📝 Monaco Editor Inside**: Powered by the same editor that runs VS Code, featuring syntax highlighting, code completion, minimap, and robust formatting.
+- **� Local LLM Support (Ollama)**: Integrated support for offline, local AI models via Ollama for privacy and cost savings.
+- **�📝 Monaco Editor Inside**: Powered by the same editor that runs VS Code, featuring syntax highlighting, code completion, minimap, and robust formatting.
 - **🔄 Interactive Diff View**: See AI suggestions side-by-side with your original code. Accept (`Keep`) or Reject (`Undo`) changes with a single click.
 - **📑 Multi-Tab Support**: Open, edit, and navigate through multiple files simultaneously with a sleek Tab Bar and Breadcrumbs.
 - **🎙️ Voice-to-Code**: Speak your commands natively in Bengali or English, and let Kora AI write the code for you.
 - **🎨 Image Generation**: Built-in support for generating images via Stable Diffusion.
+- **📊 Live Statistics**: Real-time active users and total viewers tracking powered by MongoDB.
+- **📰 News Ticker**: Stay updated with the latest repository commits directly from the editor UI.
 
 ---
 
@@ -54,12 +66,11 @@ Kora AI is built using modern web technologies to provide a native-like IDE expe
 To make Kora AI the absolute best open-source AI editor, we are looking for contributors to help us build the following advanced features:
 
 1. **💻 Integrated Terminal Emulation**: Allow users to run shell commands, install npm packages, and start dev servers directly inside Kora AI.
-2. **🔌 Local LLM Support (Ollama)**: Enable developers to use offline, local AI models instead of relying on cloud APIs for privacy and cost savings.
-3. **🐙 GitHub / GitLab Integration**: Directly authenticate, pull repositories, commit, and push changes from within the IDE.
-4. **🌐 Real-Time Collaboration**: Multiplayer editing capabilities similar to Google Docs or VS Code Live Share.
-5. **🛠️ Advanced LSP (Language Server Protocol) Support**: Better intellisense, error checking, and code navigation for Python, Rust, Go, and more.
-6. **🎨 Advanced Theming Engine**: Allow users to create, import, and share custom editor themes.
-7. **📂 Cloud Storage Sync**: Save workspaces to the cloud and access them from any device.
+2. **🐙 GitHub / GitLab Integration**: Directly authenticate, pull repositories, commit, and push changes from within the IDE.
+3. **🌐 Real-Time Collaboration**: Multiplayer editing capabilities similar to Google Docs or VS Code Live Share.
+4. **🛠️ Advanced LSP (Language Server Protocol) Support**: Better intellisense, error checking, and code navigation for Python, Rust, Go, and more.
+5. **🎨 Advanced Theming Engine**: Allow users to create, import, and share custom editor themes.
+6. **📂 Cloud Storage Sync**: Save workspaces to the cloud and access them from any device.
 
 ---
 
