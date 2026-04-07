@@ -28,6 +28,7 @@ export async function POST(req: Request) {
       content,
       clientId, // To identify who sent the message and prevent echo
       timestamp: new Date().toISOString(),
+      createdAt: new Date(), // Important for MongoDB TTL Index
     };
 
     // 1. Save to MongoDB (Optional but recommended for persistence)

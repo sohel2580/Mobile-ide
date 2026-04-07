@@ -18,8 +18,20 @@ export async function GET() {
     const db = client.db("koragpt");
     const collection = db.collection("community_messages");
     
-    // Fetch last 50 messages
-    const messages = await collection.find().sort({ timestamp: -1 }).limit(50).toArray();
+    // Create TTL Index for 5 minutes (300 seconds) if it doesn't exist
+    // This tells MongoDB to automatically delete documents 5 minutes after their createdAt time
+    await collection.createIndex(
+      { "createdAt": 1 },
+      { expireAfterSeconds: 300 }
+    );
+    
+    // Fetch last 50 messages, filtering out any that might be older than 5 mins
+    // just in case the MongoDB TTL background process hasn't deleted them yet
+    const fiveMinsAgo = new Date(Date.now() - 5 * 60 * 1000);
+    const messages = await collection.find({ createdAt: { $gte: fiveMinsAgo } })
+      .sort({ timestamp: -1 })
+      .limit(50)
+      .toArray();
     
     return NextResponse.json(messages.reverse());
   } catch (error) {
