@@ -819,6 +819,8 @@ export default function ChatApp() {
                 messages: chatMessages,
                 modelId: sanitizedModelId,
                 userApiKey,
+                // Prefer non-stream JSON in production for stability.
+                stream: false,
               }),
             });
 

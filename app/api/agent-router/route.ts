@@ -13,11 +13,13 @@ type AgentRouterRequestBody = {
   modelId: string;
   // When provided, we use it directly (no built-in daily limit applies).
   userApiKey?: string | null;
+  // Optional: request streaming SSE. Default is non-stream JSON for stability on serverless.
+  stream?: boolean;
 };
 
 export async function POST(req: Request) {
   try {
-    const { messages, modelId, userApiKey } = (await req.json()) as AgentRouterRequestBody;
+    const { messages, modelId, userApiKey, stream } = (await req.json()) as AgentRouterRequestBody;
 
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
       return NextResponse.json(
@@ -60,6 +62,8 @@ export async function POST(req: Request) {
       selectedKey = keys[Math.floor(Math.random() * keys.length)];
     }
 
+    const wantStream = stream === true;
+
     // AgentRouter uses additional client fingerprint headers to allow requests.
     // RooCode-compatible headers (from public workaround references).
     const upstreamRes = await fetch(UPSTREAM_URL, {
@@ -69,7 +73,7 @@ export async function POST(req: Request) {
         "Accept-Encoding": "identity",
         "Content-Type": "application/json",
         Authorization: `Bearer ${selectedKey}`,
-        Accept: "text/event-stream",
+        Accept: wantStream ? "text/event-stream" : "application/json",
         // Client fingerprint headers (helps avoid "unauthorized client detected").
         "User-Agent": "RooCode/3.34.8",
         "HTTP-Referer": "https://github.com/RooVetGit/Roo-Cline",
@@ -83,8 +87,7 @@ export async function POST(req: Request) {
       body: JSON.stringify({
         model: modelId,
         messages,
-        // Request a streaming response compatible with OpenAI SSE format.
-        stream: true,
+        stream: wantStream,
       }),
     });
 
@@ -112,6 +115,12 @@ export async function POST(req: Request) {
         },
         { status: upstreamRes.status }
       );
+    }
+
+    // Non-stream mode: return JSON directly (more stable in serverless environments).
+    if (!wantStream) {
+      const data = await upstreamRes.json().catch(() => null);
+      return NextResponse.json(data, { status: upstreamRes.status });
     }
 
     // Stream-through (no JSON re-wrapping). Client will parse SSE.

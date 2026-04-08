@@ -86,6 +86,11 @@ Kora AI is built using modern web technologies to provide a native-like IDE expe
 - **🌐 OpenRouter Provider Integration**: Added OpenRouter as an API provider with browser-safe server proxy (`/api/openrouter`), required headers, and improved OpenRouter error visibility.
 - **⏳ OpenRouter Rate-Limit Handling**: When OpenRouter returns `429 Too Many Requests`, the IDE shows a user-friendly retry message including `Retry-After` when available.
 - **🧠 OpenRouter Single-Turn Execution**: For OpenRouter provider, the agent loop is reduced to a single request per user message to avoid unnecessary repeated calls.
+- **🧭 Agent Router Provider (CORS-free)**: Added a dedicated backend proxy (`/api/agent-router`) for Agent Router (OpenAI-compatible) to avoid browser CORS issues.
+- **🔑 Agent Router Dual-Mode Keys**: Use a user-provided key when available; otherwise supports built-in keys (via `AGENT_ROUTER_KEYS`) with a daily free limit on the frontend.
+- **🧾 Agent Router Client Fingerprint Headers**: Forward RooCode-compatible headers to prevent upstream "unauthorized client detected" blocks.
+- **☁️ Cloud-Stable Agent Router Responses**: Switched Agent Router proxy to prefer **non-stream JSON completions** by default for production stability (avoids serverless SSE buffering/timeouts), with streaming optional.
+- **💡 Better Chat Feedback**: Added a visible KoraGPT typing indicator (logo + spinning ring + bouncing dots) so users know the model is generating a reply.
 
 ---
 
