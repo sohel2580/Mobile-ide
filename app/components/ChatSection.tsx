@@ -363,10 +363,29 @@ export const ChatSection = ({
               </div>
             ))}
             {isLoading && (
-              <div className="px-4 py-6 bg-gray-900/30">
-                <div className="flex gap-3 animate-pulse">
-                  <div className="w-7 h-7 bg-yellow-400/50 rounded-lg" />
-                  <div className="flex-1 h-4 bg-gray-800 rounded mt-2" />
+              <div className="px-4 py-6 bg-gray-900/30 border-b border-gray-800">
+                <div className="flex gap-3">
+                  <div className="w-7 h-7 rounded-lg flex-shrink-0 flex items-center justify-center shadow-lg bg-yellow-400 relative">
+                    <Image src="/koragpt.png" alt="KoraGPT Logo" width={16} height={16} className="rounded-sm" />
+                  </div>
+                  <div className="flex-1 text-gray-200 text-xs leading-relaxed overflow-hidden">
+                    <div className="inline-flex items-center gap-3 rounded-full bg-gray-800/80 px-3 py-2 border border-gray-700/70 shadow-inner">
+                      <div className="relative w-6 h-6">
+                        <div className="absolute inset-0 rounded-full border-2 border-yellow-400/30 border-t-yellow-400 animate-spin" />
+                        <div className="absolute inset-1 rounded-full bg-gray-900 flex items-center justify-center">
+                          <Image src="/koragpt.png" alt="KoraGPT Logo" width={14} height={14} className="rounded-sm" />
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-bounce [animation-delay:-0.2s]" />
+                        <span className="w-1.5 h-1.5 rounded-full bg-yellow-300 animate-bounce [animation-delay:-0.05s]" />
+                        <span className="w-1.5 h-1.5 rounded-full bg-yellow-200 animate-bounce [animation-delay:0.15s]" />
+                      </div>
+                      <span className="text-[10px] text-gray-300 whitespace-nowrap">
+                        KoraGPT is thinking...
+                      </span>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}

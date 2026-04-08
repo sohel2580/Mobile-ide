@@ -14,6 +14,7 @@ import { Sidebar } from "./components/Sidebar";
 import { EditorSection } from "./components/EditorSection";
 import { ChatSection } from "./components/ChatSection";
 import { TopMenuBar } from "./components/TopMenuBar";
+import { LiveToastNotification } from "./components/LiveToastNotification";
 import { ProjectItem, ChatSession, Message, PendingEdit } from "./types";
 import { ClipboardState } from "./components/ProjectTree";
 import { IMAGE_MODEL_ID, SYSTEM_PROMPT, MONACO_LANGUAGE_MAPPING } from "./constants";
@@ -92,6 +93,7 @@ export default function ChatApp() {
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [input, setInput] = useState<string>("");
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [toastErrorMessage, setToastErrorMessage] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
   const [isListening, setIsListening] = useState<boolean>(false);
   const [isSpeaking, setIsSpeaking] = useState<string | null>(null);
@@ -162,7 +164,8 @@ export default function ChatApp() {
     if (apiSettingsRaw) {
       try {
         const parsed = JSON.parse(apiSettingsRaw) as { provider?: string; apiKey?: string; modelId?: string };
-        if (parsed.provider === "openrouter") {
+        // Prevent stale OpenRouter api_settings from overriding the selected provider.
+        if (parsed.provider === "openrouter" && savedProvider === "openrouter") {
           if (parsed.apiKey) setToken(parsed.apiKey);
           if (parsed.modelId) setModelId(parsed.modelId);
           setProvider("openrouter");
@@ -220,7 +223,8 @@ export default function ChatApp() {
   };
 
   const saveSettings = () => {
-    if (provider !== "ollama" && !token) {
+    // For Agent Router, users may leave token empty to use built-in keys (daily-limited).
+    if (provider !== "ollama" && provider !== "agent_router" && !token) {
       alert("Please provide the API Token!");
       return;
     }
@@ -241,6 +245,9 @@ export default function ChatApp() {
         modelId,
       };
       localStorage.setItem("api_settings", JSON.stringify(apiSettings));
+    } else {
+      // Clear stale OpenRouter settings so they don't override the UI provider on refresh.
+      localStorage.removeItem("api_settings");
     }
     alert("Settings saved!");
   };
@@ -577,7 +584,7 @@ export default function ChatApp() {
       return;
     }
     
-    if (provider !== "ollama" && !token) {
+    if (provider !== "ollama" && provider !== "agent_router" && !token) {
       alert("Please save Token from API Settings!");
       setShowApiSettings(true);
       return;
@@ -721,33 +728,139 @@ export default function ChatApp() {
           const sanitizedModelId = modelId.trim();
 
           if (provider === "agent_router") {
-            apiUrl = "/api/proxy"; // Route through Next.js backend proxy
-            
-            const response = await fetch(apiUrl, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json"
-              },
-              body: JSON.stringify({
-                targetUrl: "https://agentrouter.org/v1/chat/completions",
-                method: "POST",
-                headers: {
-                  "Authorization": `Bearer ${token}`,
-                  "HTTP-Referer": "https://koragpt.vercel.app", // Required for some proxy/router services
-                  "X-Title": "KoraGPT IDE"
-                },
-                body: {
-                  model: sanitizedModelId,
-                  messages: chatMessages,
-                  max_tokens: maxTokensState,
-                  temperature: temperature
+            const userApiKey = token.trim();
+            const usingBuiltInKeys = !userApiKey;
+
+            const today = (() => {
+              const now = new Date();
+              const yyyy = now.getFullYear();
+              const mm = String(now.getMonth() + 1).padStart(2, "0");
+              const dd = String(now.getDate()).padStart(2, "0");
+              return `${yyyy}-${mm}-${dd}`;
+            })();
+
+            const readLocalUsage = (): { date: string; count: number } => {
+              const raw = localStorage.getItem("koragpt_agent_usage");
+              if (!raw) return { date: today, count: 0 };
+              try {
+                const parsed = JSON.parse(raw) as { date?: string; count?: number };
+                if (parsed?.date !== today) return { date: today, count: 0 };
+                return {
+                  date: today,
+                  count: typeof parsed.count === "number" ? parsed.count : 0,
+                };
+              } catch {
+                return { date: today, count: 0 };
+              }
+            };
+
+            const updateLocalUsage = (usage: { date: string; count: number }) => {
+              localStorage.setItem("koragpt_agent_usage", JSON.stringify(usage));
+            };
+
+            let pendingUsageToIncrement: { date: string; count: number } | null = null;
+
+            // Daily free limit only applies to built-in keys (when userApiKey is empty).
+            if (usingBuiltInKeys) {
+              const usage = readLocalUsage();
+              if (usage.count >= 4) {
+                setToastErrorMessage(
+                  "Daily limit of 4 free messages reached. Please add your own Agent Router API Key in settings."
+                );
+                return;
+              }
+              pendingUsageToIncrement = usage;
+            }
+
+            // Read OpenAI-style SSE stream and stitch it into a final text response.
+            const readAgentRouterSSE = async (stream: ReadableStream<Uint8Array>): Promise<string> => {
+              const decoder = new TextDecoder("utf-8");
+              let buffer = "";
+              let result = "";
+              const reader = stream.getReader();
+
+              while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+
+                buffer += decoder.decode(value, { stream: true });
+
+                // SSE: parse line-by-line.
+                const lines = buffer.split("\n");
+                buffer = lines.pop() || "";
+
+                for (const line of lines) {
+                  const trimmed = line.trim();
+                  if (!trimmed.startsWith("data:")) continue;
+
+                  const dataStr = trimmed.replace(/^data:\s*/, "");
+                  if (!dataStr) continue;
+
+                  if (dataStr === "[DONE]") return result;
+
+                  try {
+                    const json = JSON.parse(dataStr) as any;
+                    const delta = json?.choices?.[0]?.delta;
+                    const piece: string | undefined = delta?.content ?? delta?.text;
+                    if (piece) result += piece;
+                  } catch {
+                    // Ignore non-JSON SSE chunks.
+                  }
                 }
-              })
+              }
+
+              return result;
+            };
+
+            const response = await fetch("/api/agent-router", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                messages: chatMessages,
+                modelId: sanitizedModelId,
+                userApiKey,
+              }),
             });
-            const data = await response.json();
-            if (data.error) throw new Error(data.error.message || "Agent Router API Error: " + JSON.stringify(data.error));
-            if (!data.choices || !data.choices[0]) throw new Error("Invalid response from Agent Router: " + JSON.stringify(data));
-            content = data.choices[0].message.content;
+
+            if (!response.ok) {
+              // Try to parse structured proxy error.
+              let message = `Agent Router request failed (HTTP ${response.status}).`;
+              try {
+                const data = await response.json();
+                message =
+                  data?.error?.message ||
+                  data?.error?.raw?.message ||
+                  data?.message ||
+                  message;
+              } catch {
+                const text = await response.text().catch(() => "");
+                if (text) message = text;
+              }
+              setToastErrorMessage(message);
+              throw new Error(message);
+            }
+
+            const contentType = response.headers.get("content-type") || "";
+
+            // Fallback: if upstream returns non-SSE JSON, parse it.
+            if (contentType.includes("application/json")) {
+              const data = await response.json().catch(() => null) as any;
+              content =
+                data?.choices?.[0]?.message?.content ||
+                data?.choices?.[0]?.text ||
+                data?.error?.message ||
+                "";
+            } else {
+              if (!response.body) {
+                throw new Error("Agent Router streaming response missing response body.");
+              }
+              content = await readAgentRouterSSE(response.body);
+            }
+
+            // Increment free-tier usage only after we got a non-empty response.
+            if (usingBuiltInKeys && pendingUsageToIncrement && content.trim()) {
+              updateLocalUsage({ ...pendingUsageToIncrement, count: pendingUsageToIncrement.count + 1 });
+            }
           } else if (provider === "openrouter") {
             let apiKeyToUse = token;
             let modelIdToUse = sanitizedModelId;
@@ -1148,6 +1261,9 @@ export default function ChatApp() {
       setReferencedFileIds([]);
     } catch (error: any) {
       let errorMessage = error?.message || "Unknown error";
+      if (provider === "agent_router") {
+        setToastErrorMessage(errorMessage);
+      }
       setSessions(prev => prev.map(s => 
         s.id === currentSessionId ? { ...s, messages: [...s.messages, { role: "assistant", content: errorMessage }] } : s
       ));
@@ -1157,7 +1273,13 @@ export default function ChatApp() {
   };
 
   return (
-    <div className="flex flex-col md:flex-row h-[100dvh] md:h-screen font-sans overflow-hidden bg-[#0d1117] text-white transition-colors duration-300 dark">
+    <div className="flex flex-col md:flex-row h-[100dvh] md:h-screen font-sans overflow-hidden bg-[#0d1117] text-white transition-colors duration-300 dark relative">
+      <LiveToastNotification
+        message={toastErrorMessage}
+        sender={null}
+        onDismiss={() => setToastErrorMessage(null)}
+        variant="error"
+      />
       <Sidebar 
         isSidebarOpen={isSidebarOpen}
         setIsSidebarOpen={setIsSidebarOpen}
