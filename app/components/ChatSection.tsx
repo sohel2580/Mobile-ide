@@ -7,9 +7,10 @@
  */
 
 import React, { Dispatch, RefObject, SetStateAction, useEffect, useState, useRef } from "react";
-import { Bot, Plus, User, File, Folder, X, ImageIcon, MicOff, Mic, Send, Users, Menu, MessageSquare } from "lucide-react";
+import { Plus, User, File, Folder, X, ImageIcon, MicOff, Mic, Send, Users, Menu, MessageSquare } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import Pusher from "pusher-js";
+import Image from "next/image";
 import { cn } from "@/lib/utils";
 import { TypewriterText } from "./TypewriterText";
 import { CodeBlock } from "./CodeBlock";
@@ -224,8 +225,13 @@ export const ChatSection = ({
             <Menu className="w-5 h-5" />
           </button>
           <div className="flex items-center gap-2">
-            <Bot className="w-5 h-5 text-yellow-400" />
-            <h2 className="text-sm font-bold text-gray-200">KoraGPT Chat</h2>
+            <Image src="/koragpt.png" alt="KoraGPT Logo" width={18} height={18} className="rounded-sm" />
+            <h2 className="text-sm font-bold text-gray-200 flex items-center gap-2">
+              <span>KoraGPT Chat</span>
+              <span className="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-yellow-500/20 text-yellow-300 border border-yellow-500/30">
+                Beta
+              </span>
+            </h2>
           </div>
         </div>
         
@@ -280,8 +286,8 @@ export const ChatSection = ({
       <div className="flex-1 overflow-y-auto w-full scroll-smooth custom-scrollbar">
         {messages.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center p-6">
-             <div className="w-12 h-12 bg-yellow-400 rounded-2xl flex items-center justify-center mb-4 shadow-xl">
-                <span className="text-xl">🤖</span>
+             <div className="w-12 h-12 bg-yellow-400/10 border border-yellow-400/30 rounded-2xl flex items-center justify-center mb-4 shadow-xl">
+                <Image src="/koragpt.png" alt="KoraGPT Logo" width={28} height={28} className="rounded-md" />
              </div>
              <h2 className="text-lg font-bold text-white mb-2">Start Chatting</h2>
              <p className="text-xs text-gray-400 leading-relaxed">Ask to edit code or ask any question.</p>
@@ -301,7 +307,11 @@ export const ChatSection = ({
                     "w-7 h-7 rounded-lg flex-shrink-0 flex items-center justify-center shadow-lg relative group/avatar",
                     msg.role === "user" ? "bg-blue-600" : "bg-yellow-400"
                   )}>
-                    {msg.role === "user" ? <User className="w-4 h-4 text-white" /> : <Bot className="w-4 h-4 text-[#0a233b]" />}
+                    {msg.role === "user" ? (
+                      <User className="w-4 h-4 text-white" />
+                    ) : (
+                      <Image src="/koragpt.png" alt="KoraGPT Logo" width={16} height={16} className="rounded-sm" />
+                    )}
                   </div>
                   <div className="flex-1 text-gray-200 text-xs leading-relaxed overflow-hidden">
                     {msg.type === "diff" && msg.editId ? (

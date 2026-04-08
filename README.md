@@ -78,6 +78,9 @@ Kora AI is built using modern web technologies to provide a native-like IDE expe
 - **⚡ Emmet + Snippets in Monaco**: Added Emmet support for HTML/CSS and custom snippet providers for JavaScript, TypeScript, React, and Python.
 - **📸 Code Snapshot Export**: Added VS Code-style code snapshot action to capture selected code as a polished PNG image with syntax highlighting.
 - **🛡️ Snapshot Runtime Stability Fix**: Replaced unsupported `lab`-based capture styles with html2canvas-safe gradient and color values.
+- **🧠 Unified KoraGPT Branding**: Replaced editor/chat AI icons with the official `koragpt.png` logo across key UI areas and assistant presence.
+- **🏷️ Beta Product Tagging**: Added a compact `Beta` badge next to `KoraGPT` and `KoraGPT Chat` titles for clear release-state visibility.
+- **🎯 Favicon and PWA Icon Alignment**: Updated app metadata and manifest icons to use the official KoraGPT logo.
 
 ---
 

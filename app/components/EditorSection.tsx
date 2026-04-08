@@ -8,10 +8,11 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import Editor, { DiffEditor } from "@monaco-editor/react";
-import { File, Bot, Check, X, Undo, ChevronRight } from "lucide-react";
+import { File, Check, X, ChevronRight } from "lucide-react";
 import { emmetCSS, emmetHTML } from "emmet-monaco-es";
 import html2canvas from "html2canvas";
 import type * as Monaco from "monaco-editor";
+import Image from "next/image";
 import { cn } from "@/lib/utils";
 import { ProjectItem, PendingEdit } from "../types";
 import { NewsTicker } from "./NewsTicker";
@@ -350,7 +351,7 @@ export const EditorSection = ({
         {activePendingEdit && (
           <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 bg-[#2d2d2d]/90 backdrop-blur-md border border-blue-500/30 px-4 py-2 rounded-full shadow-2xl animate-in fade-in zoom-in duration-300">
             <div className="flex items-center gap-2 mr-2 pr-3 border-r border-gray-700">
-              <Bot className="w-4 h-4 text-blue-400" />
+              <Image src="/koragpt.png" alt="KoraGPT Logo" width={16} height={16} className="rounded-sm" />
               <span className="text-[11px] font-semibold text-gray-200 uppercase tracking-wider">AI Suggestion</span>
             </div>
             <button 
@@ -507,7 +508,7 @@ export const EditorSection = ({
           )
         ) : (
           <div className="h-full flex flex-col items-center justify-center text-gray-600 bg-[#1e1e1e]">
-            <Bot className="w-16 h-16 mb-4 opacity-10" />
+            <Image src="/koragpt.png" alt="KoraGPT Logo" width={64} height={64} className="mb-4 opacity-30" />
             <p className="text-sm font-medium">Select a file to edit</p>
           </div>
         )}

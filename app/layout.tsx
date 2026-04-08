@@ -20,6 +20,11 @@ export const metadata: Metadata = {
   title: "KoraGPT - Your AI Chat Companion",
   description: "A simple and powerful AI chat application powered by Hugging Face models.",
   manifest: "/manifest.json",
+  icons: {
+    icon: "/koragpt.png",
+    shortcut: "/koragpt.png",
+    apple: "/koragpt.png",
+  },
 };
 
 export default function RootLayout({

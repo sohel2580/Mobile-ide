@@ -7,7 +7,8 @@
  */
 
 import React, { RefObject, useState, useEffect } from "react";
-import { Bot, Plus, X, FilePlus, FolderPlus, Plus as PlusIcon, Folder, ChevronDown, ChevronRight, RefreshCw, Download } from "lucide-react";
+import { Plus, X, FilePlus, FolderPlus, Plus as PlusIcon, Folder, ChevronDown, ChevronRight, RefreshCw, Download } from "lucide-react";
+import Image from "next/image";
 import { cn } from "@/lib/utils";
 import { ClipboardState, ProjectTree } from "./ProjectTree";
 import { ProjectItem, ChatSession } from "../types";
@@ -147,7 +148,11 @@ export const Sidebar = ({
         <div className="p-4 border-b border-gray-700 flex flex-col gap-4">
           <div className="flex items-center justify-between">
             <h1 className="text-xl font-bold text-yellow-400 tracking-wider flex items-center gap-2">
-              <Bot className="w-6 h-6" /> KoraGPT
+              <Image src="/koragpt.png" alt="KoraGPT Logo" width={24} height={24} className="rounded-sm" />
+              <span>KoraGPT</span>
+              <span className="text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-yellow-500/20 text-yellow-300 border border-yellow-500/30">
+                Beta
+              </span>
             </h1>
             <button 
               onClick={() => setIsSidebarOpen(false)}
