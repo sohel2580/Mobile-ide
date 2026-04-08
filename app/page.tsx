@@ -13,6 +13,7 @@ import { HfInference } from "@huggingface/inference";
 import { Sidebar } from "./components/Sidebar";
 import { EditorSection } from "./components/EditorSection";
 import { ChatSection } from "./components/ChatSection";
+import { TopMenuBar } from "./components/TopMenuBar";
 import { ProjectItem, ChatSession, Message, PendingEdit } from "./types";
 import { ClipboardState } from "./components/ProjectTree";
 import { IMAGE_MODEL_ID, SYSTEM_PROMPT, MONACO_LANGUAGE_MAPPING } from "./constants";
@@ -1081,7 +1082,7 @@ export default function ChatApp() {
   };
 
   return (
-    <div className="flex flex-col md:flex-row h-screen font-sans overflow-hidden bg-[#0d1117] text-white transition-colors duration-300 dark">
+    <div className="flex flex-col md:flex-row h-[100dvh] md:h-screen font-sans overflow-hidden bg-[#0d1117] text-white transition-colors duration-300 dark">
       <Sidebar 
         isSidebarOpen={isSidebarOpen}
         setIsSidebarOpen={setIsSidebarOpen}
@@ -1124,18 +1125,27 @@ export default function ChatApp() {
         handleFileUpload={handleFileUpload}
       />
 
-      <div className={`flex-1 overflow-hidden relative ${mobileView === "editor" ? "flex" : "hidden"} md:flex`}>
-        <EditorSection 
-          activeFile={activeFile}
-          openFiles={flatProjectItems.filter(f => tabs.includes(f.id))}
-          setActiveFileId={setActiveFileHandler}
-          closeFile={closeFileHandler}
-          getMonacoLanguage={getMonacoLanguage}
-          handleEditorChange={handleEditorChange}
-          pendingEdits={currentSession?.pendingEdits || []}
-          handleAcceptEdit={handleAcceptEdit}
-          handleRejectEdit={handleRejectEdit}
+      <div className={`flex-1 overflow-hidden relative flex-col ${mobileView === "editor" ? "flex" : "hidden"} md:flex`}>
+        <TopMenuBar
+          onNewFile={() => createNewItem("file")}
+          onNewFolder={() => createNewItem("folder")}
+          onDownloadProject={downloadProject}
+          onToggleSidebar={() => setIsSidebarOpen((prev) => !prev)}
         />
+
+        <div className="flex-1 min-h-0 flex">
+          <EditorSection 
+            activeFile={activeFile}
+            openFiles={flatProjectItems.filter(f => tabs.includes(f.id))}
+            setActiveFileId={setActiveFileHandler}
+            closeFile={closeFileHandler}
+            getMonacoLanguage={getMonacoLanguage}
+            handleEditorChange={handleEditorChange}
+            pendingEdits={currentSession?.pendingEdits || []}
+            handleAcceptEdit={handleAcceptEdit}
+            handleRejectEdit={handleRejectEdit}
+          />
+        </div>
         
         {/* Floating action button to go back to chat on mobile */}
         <button 

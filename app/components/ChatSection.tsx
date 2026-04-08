@@ -216,11 +216,12 @@ export const ChatSection = ({
 
   return (
     <div className="w-full flex flex-col h-full bg-[#0d1117] relative flex-shrink-0 border-l border-gray-800">
-      <header className="flex items-center justify-between px-4 py-3 border-b border-gray-800 bg-[#0a233b]/50 backdrop-blur-md sticky top-0 z-10">
+      <header className="flex items-center justify-between px-4 py-3 pt-[calc(0.75rem+env(safe-area-inset-top))] md:pt-3 border-b border-gray-800 bg-[#0a233b]/50 backdrop-blur-md sticky top-0 z-10">
         <div className="flex items-center gap-3">
           <button 
             onClick={() => setIsSidebarOpen(true)}
-            className="md:hidden p-1.5 -ml-2 text-gray-400 hover:text-white transition-colors"
+            className="md:hidden -ml-2 min-w-10 min-h-10 p-2 text-gray-300 hover:text-white transition-colors touch-manipulation relative z-20 pointer-events-auto"
+            aria-label="Open sidebar"
           >
             <Menu className="w-5 h-5" />
           </button>
@@ -293,7 +294,7 @@ export const ChatSection = ({
              <p className="text-xs text-gray-400 leading-relaxed">Ask to edit code or ask any question.</p>
           </div>
         ) : (
-          <div className="flex flex-col pb-32">
+          <div className="flex flex-col pb-[calc(8rem+env(safe-area-inset-bottom))] md:pb-32">
             {messages.map((msg, index) => (
               <div 
                 key={index} 
@@ -374,7 +375,7 @@ export const ChatSection = ({
         )}
       </div>
 
-      <div className="absolute bottom-0 left-0 w-full bg-gradient-to-t from-[#0d1117] via-[#0d1117]/95 to-transparent pt-8 pb-4 px-4">
+      <div className="absolute bottom-0 left-0 w-full bg-gradient-to-t from-[#0d1117] via-[#0d1117]/95 to-transparent pt-8 pb-[calc(1rem+env(safe-area-inset-bottom))] md:pb-4 px-4">
         {referencedFileIds.length > 0 && (
           <div className="flex flex-wrap gap-2 mb-2 px-1">
             {referencedFileIds.map(id => {

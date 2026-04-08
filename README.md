@@ -81,6 +81,8 @@ Kora AI is built using modern web technologies to provide a native-like IDE expe
 - **🧠 Unified KoraGPT Branding**: Replaced editor/chat AI icons with the official `koragpt.png` logo across key UI areas and assistant presence.
 - **🏷️ Beta Product Tagging**: Added a compact `Beta` badge next to `KoraGPT` and `KoraGPT Chat` titles for clear release-state visibility.
 - **🎯 Favicon and PWA Icon Alignment**: Updated app metadata and manifest icons to use the official KoraGPT logo.
+- **📱 Mobile Viewport Stability**: Improved mobile layout so browser UI space does not push the chat composer off-screen.
+- **🧭 VS Code-style Top Menus**: Added a desktop menu bar with `File`, `Edit`, `View`, `Terminal`, `Instruction`, `Community`, and `About` dropdowns.
 
 ---
 
