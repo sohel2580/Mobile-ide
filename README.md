@@ -83,6 +83,9 @@ Kora AI is built using modern web technologies to provide a native-like IDE expe
 - **🎯 Favicon and PWA Icon Alignment**: Updated app metadata and manifest icons to use the official KoraGPT logo.
 - **📱 Mobile Viewport Stability**: Improved mobile layout so browser UI space does not push the chat composer off-screen.
 - **🧭 VS Code-style Top Menus**: Added a desktop menu bar with `File`, `Edit`, `View`, `Terminal`, `Instruction`, `Community`, and `About` dropdowns.
+- **🌐 OpenRouter Provider Integration**: Added OpenRouter as an API provider with browser-safe server proxy (`/api/openrouter`), required headers, and improved OpenRouter error visibility.
+- **⏳ OpenRouter Rate-Limit Handling**: When OpenRouter returns `429 Too Many Requests`, the IDE shows a user-friendly retry message including `Retry-After` when available.
+- **🧠 OpenRouter Single-Turn Execution**: For OpenRouter provider, the agent loop is reduced to a single request per user message to avoid unnecessary repeated calls.
 
 ---
 

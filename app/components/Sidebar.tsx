@@ -310,6 +310,7 @@ export const Sidebar = ({
                 >
                   <option value="huggingface">Hugging Face</option>
                   <option value="openai">OpenAI (ChatGPT)</option>
+                  <option value="openrouter">OpenRouter</option>
                   <option value="anthropic">Anthropic (Claude)</option>
                   <option value="gemini">Google Gemini</option>
                   <option value="glm">GLM (ZhipuAI)</option>
@@ -321,13 +322,21 @@ export const Sidebar = ({
               
               {provider !== "ollama" && (
                 <div className="space-y-1">
-                  <label className="text-[10px] text-gray-400 ml-1">API Key / Token</label>
+                  <label className="text-[10px] text-gray-400 ml-1">
+                    API Key / Token
+                  </label>
                   <input
                     type="password"
                     value={token}
                     onChange={(e) => setToken(e.target.value)}
                     className="w-full p-2.5 text-xs rounded-xl bg-gray-800/50 border border-gray-700 text-white focus:outline-none focus:ring-2 focus:ring-yellow-400/20 focus:border-yellow-400 placeholder-gray-600 transition-all"
-                    placeholder={provider === "huggingface" ? "hf_..." : "sk-..."}
+                    placeholder={
+                      provider === "huggingface"
+                        ? "hf_..."
+                        : provider === "openrouter"
+                        ? "sk-or-v1-..."
+                        : "sk-..."
+                    }
                   />
                 </div>
               )}
@@ -371,6 +380,7 @@ export const Sidebar = ({
                       provider === "gemini" ? "gemini-1.5-pro" :
                       provider === "glm" ? "glm-4" :
                       provider === "ollama" ? "llama3" :
+                      provider === "openrouter" ? "anthropic/claude-3-haiku" :
                       provider === "agent_router" ? "gpt-4o or claude-3-5-sonnet-20241022" :
                       "model-name"
                     }

@@ -157,6 +157,20 @@ export default function ChatApp() {
     if (savedBaseUrl) setBaseUrl(savedBaseUrl);
     if (savedTemp) setTemperature(parseFloat(savedTemp));
     if (savedMaxTokens) setMaxTokensState(parseInt(savedMaxTokens));
+
+    const apiSettingsRaw = localStorage.getItem("api_settings");
+    if (apiSettingsRaw) {
+      try {
+        const parsed = JSON.parse(apiSettingsRaw) as { provider?: string; apiKey?: string; modelId?: string };
+        if (parsed.provider === "openrouter") {
+          if (parsed.apiKey) setToken(parsed.apiKey);
+          if (parsed.modelId) setModelId(parsed.modelId);
+          setProvider("openrouter");
+        }
+      } catch {
+        // Ignore invalid api_settings
+      }
+    }
     if (savedItems) {
       try {
         const parsed = JSON.parse(savedItems) as ProjectItem[];
@@ -220,6 +234,14 @@ export default function ChatApp() {
     localStorage.setItem("api_base_url", baseUrl);
     localStorage.setItem("hf_temp", temperature.toString());
     localStorage.setItem("hf_max_tokens", maxTokensState.toString());
+    if (provider === "openrouter") {
+      const apiSettings = {
+        provider: "openrouter",
+        apiKey: token,
+        modelId,
+      };
+      localStorage.setItem("api_settings", JSON.stringify(apiSettings));
+    }
     alert("Settings saved!");
   };
 
@@ -649,7 +671,7 @@ export default function ChatApp() {
 
       // --- STEP 2 & 3: Agent Loop ---
       let loopMessages = [...newMessages];
-      const MAX_AGENT_TURNS = 6;
+      const MAX_AGENT_TURNS = provider === "openrouter" ? 1 : 6;
       let agentTurn = 0;
       let finalParsedMessages: Message[] = [];
       let finalEdits: PendingEdit[] = [];
@@ -692,7 +714,7 @@ export default function ChatApp() {
             });
             content = response.generated_text.split("assistant:").pop()?.trim() || response.generated_text;
           }
-        } else if (provider === "openai" || provider === "custom" || provider === "glm" || provider === "agent_router") {
+        } else if (provider === "openai" || provider === "custom" || provider === "glm" || provider === "agent_router" || provider === "openrouter") {
           let apiUrl = "https://api.openai.com/v1/chat/completions";
           if (provider === "custom" && baseUrl) apiUrl = `${baseUrl.replace(/\/$/, '')}/chat/completions`;
           if (provider === "glm") apiUrl = baseUrl ? `${baseUrl.replace(/\/$/, '')}/chat/completions` : "https://open.bigmodel.cn/api/paas/v4/chat/completions";
@@ -726,6 +748,53 @@ export default function ChatApp() {
             if (data.error) throw new Error(data.error.message || "Agent Router API Error: " + JSON.stringify(data.error));
             if (!data.choices || !data.choices[0]) throw new Error("Invalid response from Agent Router: " + JSON.stringify(data));
             content = data.choices[0].message.content;
+          } else if (provider === "openrouter") {
+            let apiKeyToUse = token;
+            let modelIdToUse = sanitizedModelId;
+            const stored = localStorage.getItem("api_settings");
+            if (stored) {
+              try {
+                const parsed = JSON.parse(stored) as { provider?: string; apiKey?: string; modelId?: string };
+                if (parsed.provider === "openrouter") {
+                  if (parsed.apiKey) apiKeyToUse = parsed.apiKey;
+                  if (parsed.modelId) modelIdToUse = parsed.modelId;
+                }
+              } catch {
+                // ignore invalid api_settings
+              }
+            }
+
+            if (!apiKeyToUse || !modelIdToUse) {
+              throw new Error("Please configure your OpenRouter API Key and Model ID in the settings first.");
+            }
+
+            // Use server-side proxy to avoid browser CORS/provider restrictions.
+            apiUrl = "/api/openrouter";
+
+            const response = await fetch(apiUrl, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Accept: "application/json",
+              },
+              body: JSON.stringify({
+                apiKey: apiKeyToUse,
+                model: modelIdToUse,
+                messages: chatMessages,
+              }),
+            });
+            const data = await response.json().catch(() => null);
+            if (!response.ok) {
+              const message =
+                (data && (data.error?.message || data.error)) ||
+                `OpenRouter request failed (HTTP ${response.status})`;
+              throw new Error(typeof message === "string" ? message : JSON.stringify(message));
+            }
+            if (data?.error) {
+              const message = data.error?.message || data.error || "OpenRouter API Error";
+              throw new Error(typeof message === "string" ? message : JSON.stringify(message));
+            }
+            content = data?.choices?.[0]?.message?.content || "";
           } else {
             const response = await fetch(apiUrl, {
               method: "POST",
@@ -814,6 +883,12 @@ export default function ChatApp() {
         if (!content) throw new Error("No response received from the model.");
 
         const cleanContent = content.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+
+        // OpenRouter should be a single-turn chat completion (avoid multi-turn tool loops).
+        if (provider === "openrouter") {
+          finalParsedMessages.push({ role: "assistant", content: cleanContent, isTyping: true });
+          break agentLoop;
+        }
 
         // --- AGENT TOOL: <kora-read> (File Reading) ---
         const readRegex = /<kora-read\s+file="([^"]+)"\s*>\s*<\/kora-read>/g;
