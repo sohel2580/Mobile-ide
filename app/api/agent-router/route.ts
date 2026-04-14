@@ -1,25 +1,52 @@
 import { NextResponse } from "next/server";
 
-// Use Node runtime for maximum compatibility with streaming + env vars.
 export const runtime = "nodejs";
 
-// Allow override via env in case upstream URL changes.
-// Fallback is aligned with the previously used Agent Router endpoint.
 const UPSTREAM_URL =
   process.env.AGENT_ROUTER_API_URL?.trim() || "https://agentrouter.org/v1/chat/completions";
+
+const REQUEST_TIMEOUT_MS = 90_000;
 
 type AgentRouterRequestBody = {
   messages: Array<{ role: string; content: string }>;
   modelId: string;
-  // When provided, we use it directly (no built-in daily limit applies).
   userApiKey?: string | null;
-  // Optional: request streaming SSE. Default is non-stream JSON for stability on serverless.
   stream?: boolean;
 };
 
+function extractContent(data: any): string {
+  if (!data) return "";
+
+  const msg = data?.choices?.[0]?.message;
+  if (msg) {
+    const text =
+      msg.content ||
+      msg.reasoning_content ||
+      msg.reasoning ||
+      msg.text ||
+      "";
+    if (text && typeof text === "string" && text.trim()) return text.trim();
+  }
+
+  if (data?.choices?.[0]?.text) {
+    return String(data.choices[0].text).trim();
+  }
+
+  if (data?.content && typeof data.content === "string") {
+    return data.content.trim();
+  }
+
+  if (data?.text && typeof data.text === "string") {
+    return data.text.trim();
+  }
+
+  return "";
+}
+
 export async function POST(req: Request) {
   try {
-    const { messages, modelId, userApiKey, stream } = (await req.json()) as AgentRouterRequestBody;
+    const body = (await req.json()) as AgentRouterRequestBody;
+    const { messages, modelId, userApiKey, stream } = body;
 
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
       return NextResponse.json(
@@ -28,7 +55,7 @@ export async function POST(req: Request) {
       );
     }
 
-    if (!modelId || typeof modelId !== "string") {
+    if (!modelId || typeof modelId !== "string" || !modelId.trim()) {
       return NextResponse.json(
         { error: { message: "Missing or invalid 'modelId'." } },
         { status: 400 }
@@ -37,25 +64,19 @@ export async function POST(req: Request) {
 
     let selectedKey = typeof userApiKey === "string" ? userApiKey.trim() : "";
 
-    // Dual-mode:
-    // - If userApiKey exists: use it directly.
-    // - Otherwise: pick one built-in key from env for load-balancing.
     if (!selectedKey) {
       const env = process.env.AGENT_ROUTER_KEYS || "";
-      const keys = env
-        .split(",")
-        .map((k) => k.trim())
-        .filter(Boolean);
+      const keys = env.split(",").map((k) => k.trim()).filter(Boolean);
 
       if (keys.length === 0) {
         return NextResponse.json(
           {
             error: {
               message:
-                "Agent Router keys are not configured. Please set AGENT_ROUTER_KEYS in environment variables.",
+                "No API key provided and AGENT_ROUTER_KEYS is not configured. Please add your Agent Router API key in settings.",
             },
           },
-          { status: 500 }
+          { status: 401 }
         );
       }
 
@@ -63,79 +84,139 @@ export async function POST(req: Request) {
     }
 
     const wantStream = stream === true;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
-    // AgentRouter uses additional client fingerprint headers to allow requests.
-    // RooCode-compatible headers (from public workaround references).
-    const upstreamRes = await fetch(UPSTREAM_URL, {
-      method: "POST",
-      headers: {
-        // Avoid brotli (br) streaming issues; we want raw SSE text bytes.
-        "Accept-Encoding": "identity",
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${selectedKey}`,
-        Accept: wantStream ? "text/event-stream" : "application/json",
-        // Client fingerprint headers (helps avoid "unauthorized client detected").
-        "User-Agent": "RooCode/3.34.8",
-        "HTTP-Referer": "https://github.com/RooVetGit/Roo-Cline",
-        "X-Title": "Roo Code",
-        "X-Stainless-Runtime-Version": "v22.20.0",
-        "X-Stainless-Runtime": "node",
-        "X-Stainless-Arch": "x64",
-        "X-Stainless-OS": "Linux",
-        "X-Stainless-Lang": "js",
-      },
-      body: JSON.stringify({
-        model: modelId,
-        messages,
-        stream: wantStream,
-      }),
-    });
+    let upstreamRes: Response;
+    try {
+      upstreamRes = await fetch(UPSTREAM_URL, {
+        method: "POST",
+        signal: controller.signal,
+        headers: {
+          "Accept-Encoding": "identity",
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${selectedKey}`,
+          Accept: wantStream ? "text/event-stream" : "application/json",
+          "User-Agent": "RooCode/3.34.8",
+          "HTTP-Referer": "https://github.com/RooVetGit/Roo-Cline",
+          "X-Title": "Roo Code",
+          "X-Stainless-Runtime-Version": "v22.20.0",
+          "X-Stainless-Runtime": "node",
+          "X-Stainless-Arch": "x64",
+          "X-Stainless-OS": "Linux",
+          "X-Stainless-Lang": "js",
+        },
+        body: JSON.stringify({
+          model: modelId.trim(),
+          messages,
+          stream: wantStream,
+        }),
+      });
+    } catch (fetchErr: any) {
+      const isTimeout = fetchErr?.name === "AbortError";
+      return NextResponse.json(
+        {
+          error: {
+            message: isTimeout
+              ? "Agent Router request timed out after 90 seconds. Please try again."
+              : `Network error reaching Agent Router: ${fetchErr?.message || "Unknown error"}`,
+          },
+        },
+        { status: 504 }
+      );
+    } finally {
+      clearTimeout(timer);
+    }
 
-    // If upstream failed, return a JSON error for the client to handle.
-    if (!upstreamRes.ok || !upstreamRes.body) {
-      const text = await upstreamRes.text().catch(() => "");
-      let message = text || `Agent Router request failed (HTTP ${upstreamRes.status}).`;
-      if (text) {
+    if (!upstreamRes.ok) {
+      const rawText = await upstreamRes.text().catch(() => "");
+      console.error(`[agent-router] upstream HTTP ${upstreamRes.status}:`, rawText);
+
+      let message = `Agent Router returned HTTP ${upstreamRes.status}.`;
+      if (rawText) {
         try {
-          const parsed = JSON.parse(text) as any;
+          const parsed = JSON.parse(rawText) as any;
           message =
             parsed?.error?.message ||
             parsed?.message ||
             parsed?.error?.raw?.message ||
-            message;
+            rawText;
         } catch {
-          // Keep raw text as message.
+          message = rawText;
         }
       }
+
+      return NextResponse.json({ error: { message } }, { status: upstreamRes.status });
+    }
+
+    if (!upstreamRes.body) {
       return NextResponse.json(
-        {
-          error: {
-            message,
-          },
-        },
-        { status: upstreamRes.status }
+        { error: { message: "Agent Router returned an empty response body." } },
+        { status: 502 }
       );
     }
 
-    // Non-stream mode: return JSON directly (more stable in serverless environments).
-    if (!wantStream) {
-      const data = await upstreamRes.json().catch(() => null);
-      return NextResponse.json(data, { status: upstreamRes.status });
+    if (wantStream) {
+      const headers = new Headers();
+      headers.set("Content-Type", "text/event-stream; charset=utf-8");
+      headers.set("Cache-Control", "no-cache, no-transform");
+      headers.set("Connection", "keep-alive");
+      return new Response(upstreamRes.body, { status: 200, headers });
     }
 
-    // Stream-through (no JSON re-wrapping). Client will parse SSE.
-    const headers = new Headers(upstreamRes.headers);
-    headers.set("Content-Type", "text/event-stream; charset=utf-8");
-    headers.set("Cache-Control", "no-cache, no-transform");
-    headers.set("Connection", "keep-alive");
+    const rawText = await upstreamRes.text().catch(() => "");
 
-    return new Response(upstreamRes.body, {
-      status: upstreamRes.status,
-      headers,
-    });
+    let data: any = null;
+    try {
+      data = JSON.parse(rawText);
+    } catch {
+      console.error("[agent-router] Could not parse JSON response:", rawText.slice(0, 500));
+      if (rawText.trim()) {
+        return NextResponse.json(
+          {
+            choices: [{ message: { content: rawText.trim() } }],
+          },
+          { status: 200 }
+        );
+      }
+      return NextResponse.json(
+        { error: { message: "Agent Router returned a non-JSON response. Check your API key and model ID." } },
+        { status: 502 }
+      );
+    }
+
+    if (data?.error) {
+      const message =
+        data.error?.message || data.error?.raw?.message || JSON.stringify(data.error);
+      console.error("[agent-router] upstream error in response:", message);
+      return NextResponse.json({ error: { message } }, { status: 400 });
+    }
+
+    const content = extractContent(data);
+    console.log(`[agent-router] model=${modelId} content_length=${content.length} raw_keys=${Object.keys(data || {}).join(",")}`);
+
+    if (!content) {
+      console.error("[agent-router] Empty content. Raw response:", JSON.stringify(data).slice(0, 1000));
+      return NextResponse.json(
+        {
+          error: {
+            message: `Agent Router returned an empty response for model "${modelId}". The model may be unavailable or the model ID may be incorrect.`,
+          },
+        },
+        { status: 502 }
+      );
+    }
+
+    return NextResponse.json(
+      {
+        choices: [{ message: { content } }],
+      },
+      { status: 200 }
+    );
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Internal Agent Router Proxy Error";
+    const message =
+      error instanceof Error ? error.message : "Internal Agent Router Proxy Error";
+    console.error("[agent-router] unhandled error:", message);
     return NextResponse.json({ error: { message } }, { status: 500 });
   }
 }
-
