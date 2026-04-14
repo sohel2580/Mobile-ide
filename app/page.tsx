@@ -801,7 +801,7 @@ export default function ChatApp() {
                   try {
                     const json = JSON.parse(dataStr) as any;
                     const delta = json?.choices?.[0]?.delta;
-                    const piece: string | undefined = delta?.content ?? delta?.text;
+                    const piece: string | undefined = delta?.content ?? delta?.reasoning_content ?? delta?.text;
                     if (piece) result += piece;
                   } catch {
                     // Ignore non-JSON SSE chunks.
@@ -847,8 +847,10 @@ export default function ChatApp() {
             // Fallback: if upstream returns non-SSE JSON, parse it.
             if (contentType.includes("application/json")) {
               const data = await response.json().catch(() => null) as any;
+              const msg = data?.choices?.[0]?.message;
               content =
-                data?.choices?.[0]?.message?.content ||
+                msg?.content ||
+                msg?.reasoning_content ||
                 data?.choices?.[0]?.text ||
                 data?.error?.message ||
                 "";
@@ -997,7 +999,8 @@ export default function ChatApp() {
 
         if (!content) throw new Error("No response received from the model.");
 
-        const cleanContent = content.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+        const stripped = content.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+        const cleanContent = stripped || content.trim();
 
         // OpenRouter should be a single-turn chat completion (avoid multi-turn tool loops).
         if (provider === "openrouter") {
